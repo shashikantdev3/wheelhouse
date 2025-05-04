@@ -14,7 +14,7 @@ This system is designed to automate IT support operations by providing users wit
 
 ## Architecture Overview
 
-![Flow Diagram](docs/images/Agentic AI on Local Environment.png)
+![Flow Diagram](docs/images/Agentic_AI_on_Local_Environment.png)
 
 The system is based on the following key components:
 
@@ -143,7 +143,7 @@ The system is based on the following key components:
 
 ## Future Plans
 
-![Flow Diagram](docs/images/Future Plans.png)
+![Flow Diagram](docs/images/Future_Plans.jpeg)
 
 * **Scaling**: Introduce dynamic scaling of services based on demand.
 * **ServiceNow Integration**: Integrate with an actual ServiceNow system for better ticket management.
