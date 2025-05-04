@@ -1,142 +1,157 @@
-# 🧠 Automation to Autonomy: Autonomous IT Support Agent (PoC)
+# Autonomous IT Support Agentic AI System
 
-This project is a Proof-of-Concept (PoC) of an intelligent, agent-based, end-to-end autonomous IT support system. It leverages Large Language Models (LLMs), multi-agent collaboration, and DevOps automation tools (Vagrant, Ansible) to spin up, provision, monitor, and manage infrastructure dynamically with minimal human input.
+**Automation to Autonomy: Autonomous IT Support Portal**
 
-Built with a simple Flask web UI, the system takes user queries like:
+This system is designed to automate IT support operations by providing users with an intelligent, autonomous agent to classify, triage, and resolve IT issues based on predefined categories. The system utilizes **LLM-powered agents** (Ollama, CrewAI, LangChain) to handle IT issues through a web-based portal.
 
-* "Set up my full application stack"
-* "Restart Tomcat"
-* "Install RabbitMQ"
-* "Check disk usage on all servers"
+## Features
 
-It then autonomously executes these using intelligent agents.
+* **Intelligent Issue Detection and Classification**: Classifies IT issues into predefined categories such as **VPN issues**, **Disk Cleanup**, **Network Connectivity**, etc.
+* **Autonomous Issue Resolution**: Generates appropriate solutions based on the classification.
+* **Infra Provisioning**: Automatically provisions infrastructure using **Ansible**, with services like **MySQL**, **Memcache**, **RabbitMQ**, **Tomcat**, **Elasticsearch**, and **Nginx**.
+* **File-Based Ticketing**: Issues are logged with timestamps and categories into a **JSON file** for tracking and analysis.
+* **Modular Agent System**: Utilizes agents like **Issue Classification**, **Ticket Logging**, **Resolution Generation**, and **Infra Provisioning** to maintain separation of concerns.
 
-🚀 Project Goals
+## Architecture Overview
 
-* Demonstrate an LLM-driven, multi-agent AI system
-* Use open-source components and local infrastructure
-* Minimize resource dependency (runs fully on local laptop)
-* Show how traditional ITSM support (like ServiceNow) can be simulated via file-based ticketing
+![Flow Diagram](docs/images/Agentic AI on Local Environment.png)
 
-🧱 Tech Stack
+The system is based on the following key components:
 
-Frontend/UI:
+1. **Web Interface (Flask UI)**:
 
-* Flask Web Portal (for now; MS Teams integration planned)
+   * Users submit IT issues through a form on a clean, professional interface.
+   * Uses Pantone 293 blue and Helvetica for design, providing a modern and user-friendly experience.
 
-Backend Logic:
+2. **Agentic AI System**:
 
-* LangChain + CrewAI → Agent orchestration
-* Ollama (Mistral) → Local LLM inference
-* Python (agent logic + utilities)
-* JSON/CSV → File-based ticketing
+   * **Issue Classification Agent**: Analyzes the submitted issue and classifies it into categories.
+   * **Ticketing Agent**: Logs issues with timestamps in a JSON format, mimicking ServiceNow.
+   * **Resolution Agent**: Generates possible resolutions or troubleshooting steps for the issue.
+   * **Infra Provisioning Agent**: Handles automated infrastructure provisioning via Ansible and Vagrant for MySQL, Memcache, RabbitMQ, Tomcat, Elasticsearch, and Nginx.
 
-Infrastructure:
+3. **Language Model Integration**:
 
-* Vagrant → Local VM provisioning
-* Ansible → Configuration management
-* VirtualBox → VM Provider
+   * **Ollama**, **LangChain**, and **CrewAI** are integrated to handle NLP tasks and act as the decision engine for agents.
 
-📂 Project Structure
+4. **Logging and Monitoring**:
 
-autonomous-it-support/
-├── app/
-│   ├── templates/
-│   │   └── index.html      → Web UI for user input
-│   ├── static/
-│   │   └── style.css       → Professional blue-themed styling
-│   ├── app.py              → Flask app (runs UI and agents)
-├── agents/
-│   ├── planner\_agent.py    → Breaks request into tasks
-│   ├── infra\_agent.py      → Edits and manages Vagrantfile
-│   ├── provisioner\_agent.py→ Triggers Ansible provisioning
-│   ├── adhoc\_agent.py      → Handles unstructured user commands
-│   ├── logger\_agent.py     → Logs all activity to JSON file
-├── llm/
-│   └── ollama\_config.py    → Loads and configures Mistral model
+   * Each agent interaction is logged in a JSON file with detailed metadata (issue type, timestamp, agent actions, etc.)
+
+## Technologies
+
+* **Flask**: Web framework for creating the portal and handling requests.
+* **Python**: For back-end logic and agent integrations.
+* **Ansible**: Automates infrastructure provisioning.
+* **Ollama**: Language model for issue detection and classification.
+* **LangChain**: Helps integrate with agents and language models.
+* **CrewAI**: An additional layer for managing agent flows and interactions.
+* **Vagrant**: Creates virtual machine environments to provision the services.
+
+## Setup Instructions
+
+### Prerequisites
+
+1. **Python 3.x**:
+   Ensure you have Python installed on your system.
+
+   ```bash
+   python --version
+   ```
+
+2. **Ansible**:
+   Install Ansible for automating the infrastructure provisioning.
+
+   * For Ubuntu:
+
+     ```bash
+     sudo apt update
+     sudo apt install ansible
+     ```
+
+3. **Vagrant**:
+   Install Vagrant for managing virtual machine environments.
+
+   * Download and install from [Vagrant Downloads](https://www.vagrantup.com/downloads).
+
+4. **Flask and other Dependencies**:
+   Install Flask and other dependencies using `requirements.txt`.
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+### File Structure
+
+```
 ├── ansible/
-│   ├── playbooks/          → YAML files to install services
-│   ├── inventory/          → Ansible hosts
-├── vagrant/
-│   └── Vagrantfile         → Defines 6-7 VM topology
+│   ├── Vagrantfile
+│   └── playbooks/
+│       ├── mysql.yml
+│       ├── memcache.yml
+│       ├── rabbitmq.yml
+│       ├── tomcat.yml
+│       ├── elasticsearch.yml
+│       └── nginx.yml
+├── agents/
+│   ├── issue_classifier_agent.py
+│   ├── ticketing_agent.py
+│   ├── resolver_agent.py
+│   ├── infra_provision_agent.py
+│   └── adhoc_agent.py
+├── static/
+│   └── style.css
+├── templates/
+│   └── index.html
 ├── tickets/
-│   └── tickets.json        → File-based mock for ServiceNow
-├── requirements.txt        → Python dependencies
-└── README.md               → This file
+│   └── ticket.json
+├── app.py
+├── agents_manager.py
+├── langchain_setup.py
+├── requirements.txt
+└── README.md
+```
 
-🧠 Agents Overview
+### Steps to Run the System
 
-| Agent            | Role                                       |
-| ---------------- | ------------------------------------------ |
-| PlannerAgent     | Interprets user prompt and sequences tasks |
-| InfraAgent       | Modifies Vagrantfile to define VM layout   |
-| ProvisionerAgent | Triggers Ansible playbooks for setup       |
-| AdhocAgent       | Responds to commands like "restart nginx"  |
-| LoggerAgent      | Logs actions to file (ticketing mechanism) |
+1. **Setup Flask UI**:
 
-📦 Services Provisioned
+   * Run the Flask application using:
 
-The following services can be provisioned on VMs in the exact order:
+     ```bash
+     python app.py
+     ```
 
-1. MySQL – Database Service
-2. Memcache – Database Caching
-3. RabbitMQ – Message Broker
-4. Tomcat – Application Server
-5. Elasticsearch – Search Engine
-6. Nginx – Web Server
+2. **Configure Ansible and Vagrant**:
 
-✅ Sample Use Cases
+   * Initialize your VMs by running Vagrant.
 
-* Spin up a complete 6-VM microservices stack
-* Ask the agent to install Redis on-demand
-* Restart a specific service via prompt
-* Run diagnostics (e.g., check disk/memory usage)
-* Log each step as a ticket in JSON format
+     ```bash
+     vagrant up
+     ```
+   * Ensure that the Ansible playbooks for MySQL, Memcache, RabbitMQ, Tomcat, Elasticsearch, and Nginx are correctly set up to provision the services.
 
-⚙️ How It Works (Flow)
+3. **Run Agents**:
 
-1. User submits a request via the web portal.
-2. PlannerAgent breaks it into infrastructure + provisioning tasks.
-3. InfraAgent modifies Vagrantfile and spins up VMs.
-4. ProvisionerAgent installs the services using Ansible.
-5. LoggerAgent logs the action with timestamp in tickets.json.
-6. If user makes ad-hoc request → AdhocAgent handles it directly.
+   * Integrate the issue classification, ticket logging, and resolution generation into the `app.py` backend logic.
+   * You can now submit issues via the UI, and they will be classified, logged, and resolved automatically by the agents.
 
-🖥️ Running the Project
+### Troubleshooting
 
-Pre-requisites:
+* If any issue arises in the Ansible provisioning, check the logs in `ansible/playbooks` to see which service failed.
+* Ensure that your virtual machines have the necessary resources allocated (memory, CPU).
 
-* Python 3.10+
-* Vagrant + VirtualBox
-* Ollama with Mistral model installed
-* Ansible installed on your laptop
+## Future Plans
 
-1. Clone repo
+![Flow Diagram](docs/images/Future Plans.png)
 
-<<<<<<< HEAD
-git clone [https://github.com/yourusername/autonomous-it-support.git](https://github.com/yourusername/autonomous-it-support.git)
-=======
-git clone [https://github.com/shashikantdev3/Automation-to-Autonomy-Autonomous-IT-Support-Agent]((https://github.com/shashikantdev3/Automation-to-Autonomy-Autonomous-IT-Support-Agent))
->>>>>>> 46b1f45490dabb0a8ce7a75272cf7c6c39d77fcc
-cd autonomous-it-support
+* **Scaling**: Introduce dynamic scaling of services based on demand.
+* **ServiceNow Integration**: Integrate with an actual ServiceNow system for better ticket management.
+* **Advanced NLP**: Further enhance the language models for better understanding and response quality.
+* **User Authentication**: Implement secure authentication for users accessing the portal.
 
-2. Start Flask Web App
+## License
 
-pip install -r requirements.txt
-python app/app.py
+This project is open-source and available under the [MIT License](LICENSE).
 
-3. Interact via Web UI
-
-* Type requests like “Set up app stack”
-* View ticket log in tickets/tickets.json
-
-📚 Future Enhancements
-
-* MS Teams chatbot interface
-* Real ServiceNow integration via REST APIs
-* Monitoring & alerting dashboard
-* Use of GPU-based LLM (Mixtral/CodeGemma)
-
-📄 License
-
-MIT License
+---
