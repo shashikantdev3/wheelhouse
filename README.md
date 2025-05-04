@@ -113,7 +113,11 @@ Pre-requisites:
 
 1. Clone repo
 
+<<<<<<< HEAD
 git clone [https://github.com/yourusername/autonomous-it-support.git](https://github.com/yourusername/autonomous-it-support.git)
+=======
+git clone [https://github.com/shashikantdev3/Automation-to-Autonomy-Autonomous-IT-Support-Agent]((https://github.com/shashikantdev3/Automation-to-Autonomy-Autonomous-IT-Support-Agent))
+>>>>>>> 46b1f45490dabb0a8ce7a75272cf7c6c39d77fcc
 cd autonomous-it-support
 
 2. Start Flask Web App
