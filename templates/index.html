@@ -2,26 +2,36 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Autonomous IT Support</title>
+    <title>Autonomous IT Support Portal</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body>
     <div class="container">
-        <h1>Automation to Autonomy</h1>
-        <p class="subtitle">Autonomous IT Support Portal</p>
+        <header>
+            <h1>Automation to Autonomy</h1>
+            <p class="subtitle">Your Autonomous IT Support System</p>
+        </header>
 
-        <form action="/submit" method="POST">
-            <textarea name="issue" placeholder="Describe your IT issue..." required></textarea><br>
-            <button type="submit">Submit Issue</button>
-        </form>
+        <main>
+            <form action="/submit" method="POST" class="issue-form">
+                <label for="issue">Describe Your IT Issue</label>
+                <textarea id="issue" name="issue" placeholder="Example: VPN not connecting, disk space full..." required></textarea>
+                <button type="submit">Submit Issue</button>
+            </form>
 
-        {% if result %}
-        <div class="result-box">
-            <h2>Agent Response</h2>
-            <p><strong>Category:</strong> {{ result.category }}</p>
-            <p><strong>Solution:</strong> {{ result.solution }}</p>
-        </div>
-        {% endif %}
+            {% if result %}
+            <div class="result-box">
+                <h2>Agent Response</h2>
+                <p><strong>Category:</strong> {{ result.category }}</p>
+                <p><strong>Solution:</strong> {{ result.solution }}</p>
+            </div>
+            {% endif %}
+        </main>
+
+        <!-- <footer>
+            <p>&copy; 2025 Autonomous IT Agent Platform</p>
+        </footer> -->
     </div>
 </body>
 </html>
