@@ -12,5 +12,12 @@
         "issue": "Httpd is not running",
         "category": "General",
         "solution": "Thank you for reporting. A technician will follow up soon."
+    },
+    {
+        "id": "d2aad88f-5f54-44c9-b51e-65199bd95d8f",
+        "timestamp": "2025-05-04T23:47:54.496839",
+        "issue": "On Linux /tmp filesystem is full, How to resolve it",
+        "category": "General",
+        "solution": "Thank you for reporting. A technician will follow up soon."
     }
 ]
