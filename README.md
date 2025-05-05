@@ -3,7 +3,8 @@
 **Automation to Autonomy: Autonomous IT Support Portal**
 
 This system is designed to automate IT support operations by providing users with an intelligent, autonomous agent to classify, triage, and resolve IT issues based on predefined categories. The system utilizes **LLM-powered agents** (Ollama, CrewAI, LangChain) to handle IT issues through a web-based portal.
-![Flow Diagram](docs/images/UI.png)
+
+![Web Interface - UI](docs/images/UI.png)
 
 ## Features
 
@@ -84,7 +85,6 @@ The system is based on the following key components:
 
 ### File Structure
 
-```
 ├── ansible/
 │   ├── Vagrantfile
 │   └── playbooks/
@@ -111,7 +111,7 @@ The system is based on the following key components:
 ├── langchain_setup.py
 ├── requirements.txt
 └── README.md
-```
+
 
 ### Steps to Run the System
 
