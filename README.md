@@ -16,7 +16,7 @@ This system is designed to automate IT support operations by providing users wit
 
 ## Architecture Overview
 
-![Flow Diagram](docs/images/Agentic_AI_on_Local_Environment.png)
+![Architecture Diagram](docs/images/Agentic_AI_on_Local_Environment.png)
 
 The system is based on the following key components:
 
@@ -85,14 +85,13 @@ The system is based on the following key components:
 
 ### File Structure
 
-├── ansible/
+├── Infra_setup_script_IaC/
 │   ├── Vagrantfile
-│   └── playbooks/
-│       ├── mysql.yml
-│       ├── memcache.yml
-│       ├── rabbitmq.yml
-│       ├── tomcat.yml
-│       ├── elasticsearch.yml
+│   ├── mysql.yml
+│   ├── memcache.yml
+│   ├── rabbitmq.yml
+│   ├── tomcat.yml
+│   ├── elasticsearch.yml
 │       └── nginx.yml
 ├── agents/
 │   ├── issue_classifier_agent.py
@@ -111,7 +110,6 @@ The system is based on the following key components:
 ├── langchain_setup.py
 ├── requirements.txt
 └── README.md
-
 
 ### Steps to Run the System
 
@@ -132,15 +130,46 @@ The system is based on the following key components:
      ```
    * Ensure that the Ansible playbooks for MySQL, Memcache, RabbitMQ, Tomcat, Elasticsearch, and Nginx are correctly set up to provision the services.
 
-3. **Run Agents**:
+### 🖥️ Local Infrastructure Setup (IaC Script)
 
-   * Integrate the issue classification, ticket logging, and resolution generation into the `app.py` backend logic.
-   * You can now submit issues via the UI, and they will be classified, logged, and resolved automatically by the agents.
+![Local Infra](docs/images/Local_infra.png)
 
-### Troubleshooting
+To simplify the provisioning process, a setup script is available in the `Local_infra_setup_script_IaC` directory. This script is designed to automate the creation and configuration of all required infrastructure components via a single command.
 
-* If any issue arises in the Ansible provisioning, check the logs in `ansible/playbooks` to see which service failed.
-* Ensure that your virtual machines have the necessary resources allocated (memory, CPU).
+📁 Path: `Local_infra_setup_script_IaC/`
+
+📜 Command to run:
+
+```bash
+vagrant up
+```
+
+This command will automatically:
+
+- Spin up Vagrant-managed virtual machines
+- Use bash script to provision the following services:
+  - MySQL
+  - Memcache
+  - RabbitMQ
+  - Tomcat
+  - Elasticsearch
+  - Nginx
+
+🛠️ Infrastructure Summary:
+
+The infrastructure consists of virtual machines configured to host commonly used services in enterprise environments. Each VM is provisioned with one or more of the following:
+
+| Service         | Description                                           |
+|-----------------|-------------------------------------------------------|
+| MySQL           | Open-source relational database for structured data  |
+| Memcache        | In-memory key-value store for caching                |
+| RabbitMQ        | Message broker for async communication                |
+| Tomcat          | Java servlet container for web apps                  |
+| Elasticsearch   | Full-text search and analytics engine                |
+| Nginx           | Web server and reverse proxy                         |
+
+This setup is ideal for testing and validating the full autonomous IT support flow on a local development machine without the need for manual configuration.
+
 
 ## Future Plans
 

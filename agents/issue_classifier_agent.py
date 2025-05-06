@@ -1,26 +1,30 @@
-from langchain.llms import Ollama
+from langchain_community.llms import Ollama
 from langchain.prompts import PromptTemplate
 import json
 
-llm = Ollama(model="mistral")  # Or llama3 if installed
+llm = Ollama(model="mistral")
 
 template = PromptTemplate.from_template("""
-You are an IT support agent. Classify the following issue into a support category, and provide a short reason.
+You are an experienced IT Support Agent.
 
-Issue: {issue}
+Classify the following issue into a known IT support category and briefly explain your reasoning.
 
-Respond in JSON format:
+Issue:
+{issue}
+
+Return your answer strictly in this JSON format:
 {{
-  "category": "...",
-  "reason": "..."
+"category": "<category_name>",
+"reason": "<brief_reasoning>"
 }}
 """)
 
-def classify_issue(issue):
+def classify_issue(issue: str):
     prompt = template.format(issue=issue)
     response = llm(prompt)
     try:
         result = json.loads(response)
-        return result["category"], result["reason"]
+        return result.get("category", "Uncategorized"), result.get("reason", "No reasoning provided.")
     except Exception as e:
-        return "Uncategorized", "LLM response could not be parsed."
+        print(f"Failed to parse LLM response: {response}\nError: {e}")
+        return "Uncategorized", "Could not classify due to response format error."

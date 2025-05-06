@@ -24,14 +24,18 @@
             <div class="result-box">
                 <h2>Agent Response</h2>
                 <p><strong>Category:</strong> {{ result.category }}</p>
-                <p><strong>Solution:</strong> {{ result.solution }}</p>
+                <p><strong>Affected Service:</strong> {{ result.solution.service }}</p>
+                <p><strong>Summary:</strong> {{ result.solution.summary }}</p>
+                <p><strong>Resolution Steps:</strong></p>
+                <ul>
+                    {% for step in result.solution.steps %}
+                        <li>{{ step }}</li>
+                    {% endfor %}
+                </ul>
+                <p><strong>Reasoning:</strong> {{ result.solution.reasoning }}</p>
             </div>
             {% endif %}
         </main>
-
-        <!-- <footer>
-            <p>&copy; 2025 Autonomous IT Agent Platform</p>
-        </footer> -->
     </div>
 </body>
 </html>

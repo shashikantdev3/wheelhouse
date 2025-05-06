@@ -1,0 +1,85 @@
+[
+    {
+        "id": "efdd08d9-5fb0-4f94-ae83-41eb6e7304b4",
+        "timestamp": "2025-05-06T15:16:52.545538",
+        "issue": "Disk space full on data directory",
+        "category": "Storage Management",
+        "solution": {
+            "category": "Storage Management",
+            "solution": {
+                "service": "Data Storage",
+                "summary": "The data directory is full due to insufficient disk space.",
+                "steps": [
+                    "Check current disk usage: `df -h`",
+                    "Identify the specific directory causing the issue by looking for the nearly full or full partition (usually /data or /var/lib/appname)",
+                    "Find out what is consuming the most space within that directory: `du -sh /path/to/directory/*`",
+                    "Delete unnecessary files if possible, otherwise move them to a backup location. Be careful when deleting or moving critical files.",
+                    "Consider expanding the disk size (if applicable) using cloud provider tools such as AWS EBS resize or Google Compute Engine disk resizing.",
+                    "Monitor the disk usage regularly and ensure proper configuration of log rotation and pruning to prevent similar issues in the future."
+                ],
+                "reasoning": "Checking current disk usage helps identify which directory is causing the issue. By finding out what's consuming space, you can determine if any unnecessary files exist that could be deleted or moved. Expanding the disk size provides additional room for data storage. Monitoring the disk usage regularly ensures proper management of disk resources and prevents similar issues from occurring."
+            }
+        }
+    },
+    {
+        "id": "fee296bc-9b2e-40f7-8ccb-5f869916e000",
+        "timestamp": "2025-05-06T15:18:20.924355",
+        "issue": "virtual machine is not in connected state.",
+        "category": "Virtualization",
+        "solution": {
+            "category": "Virtualization",
+            "solution": {
+                "service": "Virtual Machine",
+                "summary": "The Virtual Machine (VM) is not in a connected state.",
+                "steps": [
+                    "Check the network settings of the VM using `azure vm show --resource-group <resource-group-name> --name <vm-name> --query publicIps -o tsv | xargs -I {} az network nic list --resource-group <resource-group-name> --ip-name {} --query ipConfigurations[0].privateLinkServiceConnectionState.status -o tsv",
+                    "Ensure the output shows 'Connected' if using Azure, replace 'azure' with the appropriate CLI command for other cloud providers.",
+                    "If the status is not connected, check the network interface connection settings and ensure they are correct.",
+                    "If necessary, modify the network interface settings, such as subnet, IP configuration, or security group rules."
+                ],
+                "reasoning": "The VM's network connection might be misconfigured, causing it to be disconnected. By checking the network settings and modifying them if required, we can likely resolve this issue."
+            }
+        }
+    },
+    {
+        "id": "5857e2e2-f7f1-4cc8-bcaf-4ae6cb81f4a8",
+        "timestamp": "2025-05-06T15:22:17.261195",
+        "issue": "could not read data from the virtual disk.",
+        "category": "Storage and Virtualization",
+        "solution": {
+            "category": "Storage and Virtualization",
+            "solution": {
+                "service": "Virtual Disk",
+                "summary": "The issue is related to the inability to read data from the virtual disk, which suggests a problem with the storage system or its configuration.",
+                "steps": [
+                    "Check the status of the virtual machine and ensure it's running.",
+                    "Verify the connection between the host and the virtual disk using command `ls /dev/sd*` to identify the correct disk device and verify if it's accessible.",
+                    "Check the file system for errors by executing `fsck -f /dev/<disk_device>` (for Linux) or similar commands for other operating systems.",
+                    "If the file system checks out, ensure the permissions on the virtual disk are correct. For Linux, check with `sudo chmod 700 /dev/<disk_device>` and `sudo chown <username>:<groupname> /dev/<disk_device>`.",
+                    "Lastly, verify that the data you're trying to read exists on the virtual disk."
+                ],
+                "reasoning": "These steps will help identify if there are any issues with the storage system, connection problems, or file system inconsistencies. Additionally, they address potential permission-related issues and ensure that the necessary data is present on the virtual disk."
+            }
+        }
+    },
+    {
+        "id": "7dec4ca8-7efc-48f8-ad4d-5e2598e73297",
+        "timestamp": "2025-05-06T15:24:01.805919",
+        "issue": "could not read data from the virtual disk.",
+        "category": "Hardware/Storage",
+        "solution": {
+            "category": "Hardware/Storage",
+            "solution": {
+                "service": "Virtual Machine",
+                "summary": "The virtual disk is not accessible due to a connection or configuration problem.",
+                "steps": [
+                    "Check the network connectivity between the host and the guest (VM) using `ping <vm-ip>` command.",
+                    "Ensure that the virtual disk is attached correctly using the appropriate cloud provider CLI or API. For example, for AWS EC2, use `aws ec2 describe-instances --instance-id <instance-id>` to check the state of instances and their attached volumes.",
+                    "If the network connectivity checks out, try resizing the virtual disk using cloud provider's CLI or API to ensure it's not too large or fragmented. For example, for AWS EC2 use `aws ec2 modify-volume --volume-id <volume-id> --size <new-size>`.",
+                    "Check the status of the virtual disk controller (e.g., SCSI) using `sudo fdisk -l` or equivalent commands depending on the operating system."
+                ],
+                "reasoning": "By verifying network connectivity, checking the state and attachment of the virtual disk, resizing the disk if necessary, and ensuring that the disk controller is functioning correctly, we are addressing potential connection issues, configuration problems, and resource management concerns that may be causing the virtual disk to become inaccessible."
+            }
+        }
+    }
+]

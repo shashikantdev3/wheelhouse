@@ -5,13 +5,14 @@ from datetime import datetime
 import uuid
 import sys
 
-# Add agents path
-import sys
-
-# Add agents path using absolute path
-AGENT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'agents'))
+# Setup path to custom agents
+BASE_DIR = os.path.dirname(__file__)
+AGENT_PATH = os.path.abspath(os.path.join(BASE_DIR, 'agents'))
 sys.path.append(AGENT_PATH)
+
+# Import agents
 from issue_classifier_agent import classify_issue
+from resolver_agent import resolve_issue
 
 app = Flask(__name__)
 
@@ -40,23 +41,33 @@ def log_ticket(issue, category, solution):
             f.seek(0)
             json.dump(data, f, indent=4)
 
-@app.route('/', methods=['GET'])
-def index():
-    return render_template('index.html')
+@app.route("/", methods=["GET"])
+def home():
+    return render_template("index.html", result=None)
 
-@app.route('/submit', methods=['POST'])
+@app.route("/submit", methods=["POST"])
 def submit():
-    issue = request.form['issue']
-    category, reason = classify_issue(issue)
-    solution = f"Category: {category}\nReason: {reason}"
+    issue_text = request.form.get("issue")
+    if not issue_text:
+        return render_template("index.html", result={"category": "Invalid Input", "solution": "No issue provided. Human Level intervention needed!"})
 
-    log_ticket(issue, category, solution)
+    category, reason = classify_issue(issue_text)
+    resolution = resolve_issue(issue_text)
 
-    result = {
+    solution = {
         "category": category,
-        "solution": solution
+        "solution": {
+            "service": resolution.get("service"),
+            "summary": resolution.get("summary"),
+            "steps": resolution.get("steps"),
+            "reasoning": resolution.get("reasoning")
+        }
     }
-    return render_template('index.html', result=result)
 
-if __name__ == '__main__':
+    # Log the ticket
+    log_ticket(issue_text, category, solution)
+
+    return render_template("index.html", result=solution)
+
+if __name__ == "__main__":
     app.run(debug=True)
