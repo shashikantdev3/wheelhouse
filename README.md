@@ -24,19 +24,23 @@ The system is based on the following key components:
 
    * Users submit IT issues through a form on a clean, professional interface.
    * Uses Pantone 293 blue and Helvetica for design, providing a modern and user-friendly experience.
+  
+  ![Agent Response](docs/images/agent_response.PNG)
 
-2. **Agentic AI System**:
+1. **Agentic AI System**:
 
    * **Issue Classification Agent**: Analyzes the submitted issue and classifies it into categories.
    * **Ticketing Agent**: Logs issues with timestamps in a JSON format, mimicking ServiceNow.
    * **Resolution Agent**: Generates possible resolutions or troubleshooting steps for the issue.
    * **Infra Provisioning Agent**: Handles automated infrastructure provisioning via Ansible and Vagrant for MySQL, Memcache, RabbitMQ, Tomcat, Elasticsearch, and Nginx.
+  
+  ![Agent Workflow](docs/images/workflow.png)
 
-3. **Language Model Integration**:
+2. **Language Model Integration**:
 
    * **Ollama**, **LangChain**, and **CrewAI** are integrated to handle NLP tasks and act as the decision engine for agents.
 
-4. **Logging and Monitoring**:
+3. **Logging and Monitoring**:
 
    * Each agent interaction is logged in a JSON file with detailed metadata (issue type, timestamp, agent actions, etc.)
 
