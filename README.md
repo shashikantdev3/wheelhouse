@@ -30,9 +30,9 @@ The system is based on the following key components:
 1. **Agentic AI System**:
 
    * **Issue Classification Agent**: Analyzes the submitted issue and classifies it into categories.
-   * **Ticketing Agent**: Logs issues with timestamps in a JSON format, mimicking ServiceNow.
-   * **Resolution Agent**: Generates possible resolutions or troubleshooting steps for the issue.
-   * **Infra Provisioning Agent**: Handles automated infrastructure provisioning via Ansible and Vagrant for MySQL, Memcache, RabbitMQ, Tomcat, Elasticsearch, and Nginx.
+   * **Resolver Agent**: Generates possible resolutions or troubleshooting steps for the issue.
+   * **Validator agent**: checks safety and idempotence.
+   * **Executor Agent**: Handles automated service restart or infrastructure provisioning via Ansible and Vagrant for MySQL, Memcache, RabbitMQ, Tomcat, Elasticsearch, and Nginx etc.
   
   ![Agent Workflow](docs/images/workflow.png)
 

@@ -23,16 +23,46 @@
             {% if result %}
             <div class="result-box">
                 <h2>Agent Response</h2>
-                <p><strong>Category:</strong> {{ result.category }}</p>
-                <p><strong>Affected Service:</strong> {{ result.solution.service }}</p>
-                <p><strong>Summary:</strong> {{ result.solution.summary }}</p>
-                <p><strong>Resolution Steps:</strong></p>
-                <ul>
-                    {% for step in result.solution.steps %}
-                        <li>{{ step }}</li>
-                    {% endfor %}
-                </ul>
-                <p><strong>Reasoning:</strong> {{ result.solution.reasoning }}</p>
+
+                {% if result.category %}
+                    <p><strong>Category:</strong> {{ result.category }}</p>
+
+                    {% if result.result.reasoning %}
+                        <p><strong>Reasoning:</strong> {{ result.result.reasoning }}</p>
+                    {% endif %}
+
+                    {% if result.category.lower() == "general_query" %}
+                        <h3>General Query Results</h3>
+                        <div class="server-block">
+                            {% for server, info in result.result.server_outputs.items() %}
+                                <h4>{{ server }} ({{ info.ip }})</h4>
+                                <p><strong>Services:</strong> {{ info.services | join(', ') }}</p>
+                                <pre>{{ info.output }}</pre>
+                            {% endfor %}
+                        </div>
+                    {% elif result.category.lower() == "needs_resolution" %}
+                        <p><strong>Affected Service:</strong> {{ result.resolution.service }}</p>
+                        <p><strong>Summary:</strong> {{ result.resolution.summary }}</p>
+                        <p><strong>Resolution Steps:</strong></p>
+                        <ul>
+                            {% for step in result.resolution.steps %}
+                                <li>{{ step }}</li>
+                            {% endfor %}
+                        </ul>
+                        <p><strong>Reasoning:</strong> {{ result.resolution.reasoning }}</p>
+
+                        {% if result.validation %}
+                            <p><strong>Validation:</strong> {{ result.validation.review_notes }}</p>
+                            <p><strong>Validation Status:</strong> {% if result.validation.approved %}Approved{% else %}Not Approved{% endif %}</p>
+                        {% endif %}
+
+                        {% if result.execution %}
+                            <p><strong>Execution Status:</strong> {{ result.execution }}</p>
+                        {% endif %}
+                    {% endif %}
+                {% else %}
+                    <p><strong>Response:</strong> No category or classification available for this result.</p>
+                {% endif %}
             </div>
             {% endif %}
         </main>
