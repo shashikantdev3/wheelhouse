@@ -1,0 +1,50 @@
+# Ignore Vagrant machine metadata and sensitive files
+.vagrant/
+.vagrant/machines/
+.vagrant/machines/*/virtualbox/private_key
+.vagrant/machines/*/virtualbox/authorized_keys
+.vagrant/machines/*/virtualbox/id_rsa
+.vagrant/machines/*/virtualbox/id_rsa.pub
+.vagrant/machines/*/virtualbox/ssh_config
+.vagrant/machines/*/virtualbox/ssh_host_*
+.vagrant/machines/*/virtualbox/ssh_known_hosts
+
+# Ignore SSH configuration files
+.vagrant/ssh_config
+.vagrant/authorized_keys
+.vagrant/id_rsa
+.vagrant/id_rsa.pub
+
+# Ignore insecure default private key
+.vagrant.d/insecure_private_key
+
+# Ignore Vagrant logs and temporary files
+.vagrant.d/*.log
+.vagrant.d/*.pid
+.vagrant.d/*.bak
+.vagrant.d/*.swp
+
+# Ignore Vagrant box files
+.vagrant.d/boxes/
+
+# Ignore sensitive provisioning files
+provisioning/*.sh
+provisioning/*.yml
+provisioning/*.json
+provisioning/*.env
+provisioning/*.pem
+provisioning/*.key
+provisioning/*.crt
+
+# Ignore sensitive configuration files
+config/*.yml
+config/*.json
+config/*.env
+config/*.pem
+config/*.key
+config/*.crt
+
+# Ignore sensitive SSH keys
+*.pem
+*.key
+*.pub
