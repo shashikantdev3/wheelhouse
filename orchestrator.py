@@ -5,13 +5,13 @@ from agents import (
     resolve_issue,
     validate_resolution
 )
+import json
 
-# Main entry point for orchestrating tasks
 class SupportCrew:
     def __init__(self):
         self.ticket_log = []
 
-    def handle_issue(self, user_input: str):
+    def handle_issue(self, user_input: str) -> dict:
         ticket = {"issue": user_input}
 
         # Step 1: Classify the issue
@@ -46,16 +46,18 @@ class SupportCrew:
             self.ticket_log.append(ticket)
             return {"error": "Could not classify the issue."}
 
-    def get_ticket_log(self):
+    def get_ticket_log(self) -> list:
         return self.ticket_log
 
-# Example usage:
+
+# Example usage
 if __name__ == "__main__":
     crew = SupportCrew()
+    print("Autonomous IT Support Agent\nType 'exit' to quit.\n")
     while True:
         user_issue = input("Describe your issue: ")
         if user_issue.strip().lower() in ["exit", "quit"]:
             break
         result = crew.handle_issue(user_issue)
         print("\n--- Result ---")
-        print(result)
+        print(json.dumps(result, indent=2))

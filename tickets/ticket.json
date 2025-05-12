@@ -1,31 +1,22 @@
 [
     {
-        "id": "84973bad-2b59-4c7e-96e0-6c585cdc14a7",
-        "timestamp": "2025-05-12T14:26:39.261374",
-        "issue": "user authentication is getting failed.",
+        "id": "a429b9f4-1b28-4b7f-aa85-227abd97ce70",
+        "timestamp": "2025-05-12T17:41:10.029303",
+        "issue": "what services are running on rmq01 server",
         "result": {
-            "category": "needs_resolution",
-            "result": {},
-            "resolution": {
-                "service": "User Authentication",
-                "summary": "Authentication failures reported by users",
-                "steps": [
-                    "Check the status of the authentication service.",
-                    "Verify that the database connections are active and functional.",
-                    "Inspect the application logs for any error messages related to authentication.",
-                    "If necessary, reset the application's authentication cache."
+            "category": "general_query",
+            "result": {
+                "reasoning": "The server chosen is 'rmq01' because it matches the user query, which asks for services running on rmq01.",
+                "selected_servers": [
+                    "rmq01"
                 ],
-                "reasoning": "The steps above aim to identify and resolve common issues causing authentication failures. Checking service status ensures that the problem is not due to service unavailability. Verifying database connections is crucial because they are often used for authentication purposes. Examining application logs can help pinpoint the cause of the issue, while resetting the authentication cache may be necessary if it has become corrupted."
-            },
-            "validation": {
-                "approved": true,
-                "review_notes": "Steps look safe and logical.",
-                "allow_delegation": true
-            },
-            "execution": "Resolution approved. No further steps required."
-        }
-    }
-] 62% /vagrant\ntmpfs            74M  4.0K   74M   1% /run/user/1000\n\n\n$ top -bn1 | head -n 15\nWarning: Permanently added '192.168.56.11' (ED25519) to the list of known hosts.\r\ntop - 14:16:34 up  1:47,  0 users,  load average: 0.16, 0.04, 0.01\nTasks: 105 total,   1 running, 104 sleeping,   0 stopped,   0 zombie\n%Cpu(s):  0.0 us,  6.2 sy,  0.0 ni, 87.5 id,  0.0 wa,  0.0 hi,  6.2 si,  0.0 st\nMiB Mem :    735.3 total,    168.1 free,    155.4 used,    411.7 buff/cache\nMiB Swap:      0.0 total,      0.0 free,      0.0 used.    453.4 avail Mem \n\n    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND\n    105 root       0 -20       0      0      0 I  17.6   0.0   0:00.53 kworker+\n     90 root       0 -20       0      0      0 I   5.9   0.0   0:00.49 kworker+\n   3268 root      20   0       0      0      0 I   5.9   0.0   0:00.37 kworker+\n   3506 vagrant   20   0   10768   3940   3332 R   5.9   0.5   0:00.05 top\n      1 root      20   0  102040  12864   8204 S   0.0   1.7   0:04.48 systemd\n      2 root      20   0       0      0      0 S   0.0   0.0   0:00.02 kthreadd\n      3 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 rcu_gp\n      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 rcu_par+\n\n\n$ systemctl status nginx\nWarning: Permanently added '192.168.56.11' (ED25519) to the list of known hosts.\r\n\u25cf nginx.service - A high performance web server and a reverse proxy server\n     Loaded: loaded (/lib/systemd/system/nginx.service; enabled; vendor preset: enabled)\n     Active: active (running) since Mon 2025-05-12 12:29:08 UTC; 1h 47min ago\n       Docs: man:nginx(8)\n    Process: 3215 ExecStartPre=/usr/sbin/nginx -t -q -g daemon on; master_process on; (code=exited, status=0/SUCCESS)\n    Process: 3216 ExecStart=/usr/sbin/nginx -g daemon on; master_process on; (code=exited, status=0/SUCCESS)\n   Main PID: 3217 (nginx)\n      Tasks: 3 (limit: 835)\n     Memory: 4.5M\n        CPU: 1.642s\n     CGroup: /system.slice/nginx.service\n             \u251c\u25003217 \"nginx: master process /usr/sbin/nginx -g daemon on; master_process on;\"\n             \u251c\u25003218 \"nginx: worker process\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\"\n             \u2514\u25003219 \"nginx: worker process\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\"\n"
+                "server_outputs": {
+                    "rmq01": {
+                        "ip": "192.168.56.16",
+                        "services": [
+                            "RabbitMQ"
+                        ],
+                        "output": "$ uptime\nWarning: Permanently added '192.168.56.16' (ED25519) to the list of known hosts.\r\n 01:02:59 up  7:17,  0 users,  load average: 0.43, 0.17, 0.11\n\n\n$ systemctl status rabbitmq\nError: Warning: Permanently added '192.168.56.16' (ED25519) to the list of known hosts.\r\nUnit rabbitmq.service could not be found.\n"
                     }
                 }
             },
@@ -33,6 +24,35 @@
             "validation": null,
             "execution": null
         }
+    }
+]13:49 UTC; 48min ago\n       Docs: man:mariadbd(8)\n             https://mariadb.com/kb/en/library/systemd/\n    Process: 9830 ExecStartPre=/usr/libexec/mariadb-check-socket (code=exited, status=0/SUCCESS)\n    Process: 9852 ExecStartPre=/usr/libexec/mariadb-prepare-db-dir mariadb.service (code=exited, status=0/SUCCESS)\n    Process: 9900 ExecStartPost=/usr/libexec/mariadb-check-upgrade (code=exited, status=0/SUCCESS)\n   Main PID: 9887 (mariadbd)\n     Status: \"Taking your SQL requests now...\"\n      Tasks: 9 (limit: 3202)\n     Memory: 58.9M\n        CPU: 1.959s\n     CGroup: /system.slice/mariadb.service\n             \u2514\u25009887 /usr/libexec/mariadbd --basedir=/usr\n"
+                    }
+                }
+            },
+            "resolution": null,
+            "validation": null,
+            "execution": null
+        }
+    }
+]"\"\n"
+                    }
+                }
+            },
+            "resolution": null,
+            "validation": null,
+            "execution": null
+        }
+    }
+] 20   0  101920  12304   7636 S   0.0   1.6   0:07.45 systemd\n      2 root      20   0       0      0      0 S   0.0   0.0   0:00.03 kthreadd\n      3 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 rcu_gp\n      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 rcu_par+\n      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 slub_fl+\n      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 netns\n      8 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+\n\n\n$ systemctl status nginx\nWarning: Permanently added '192.168.56.11' (ED25519) to the list of known hosts.\r\n\u25cf nginx.service - A high performance web server and a reverse proxy server\n     Loaded: loaded (/lib/systemd/system/nginx.service; enabled; vendor preset: enabled)\n     Active: active (running) since Mon 2025-05-12 17:04:20 UTC; 19min ago\n       Docs: man:nginx(8)\n    Process: 5099 ExecStartPre=/usr/sbin/nginx -t -q -g daemon on; master_process on; (code=exited, status=0/SUCCESS)\n    Process: 5101 ExecStart=/usr/sbin/nginx -g daemon on; master_process on; (code=exited, status=0/SUCCESS)\n   Main PID: 5102 (nginx)\n      Tasks: 3 (limit: 835)\n     Memory: 4.9M\n        CPU: 181ms\n     CGroup: /system.slice/nginx.service\n             \u251c\u25005102 \"nginx: master process /usr/sbin/nginx -g daemon on; master_process on;\"\n             \u251c\u25005103 \"nginx: worker process\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\"\n             \u2514\u25005104 \"nginx: worker process\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\" \"\"\n"
+                    }
+                }
+            },
+            "resolution": null,
+            "validation": null,
+            "execution": null
+        }
+    }
+]     }
     }
 ]            "output": "$ uptime\nWarning: Permanently added '192.168.56.14' (ED25519) to the list of known hosts.\r\n 21:35:01 up  3:54,  0 users,  load average: 0.24, 0.05, 0.02\n\n\n$ free -m\nWarning: Permanently added '192.168.56.14' (ED25519) to the list of known hosts.\r\n               total        used        free      shared  buff/cache   available\nMem:             539          98         233           0         228         440\nSwap:           2047          13        2034\n\n\n$ df -h\nWarning: Permanently added '192.168.56.14' (ED25519) to the list of known hosts.\r\nFilesystem      Size  Used Avail Use% Mounted on\ndevtmpfs        4.0M     0  4.0M   0% /dev\ntmpfs           270M     0  270M   0% /dev/shm\ntmpfs           108M  3.6M  105M   4% /run\n/dev/sda1       9.8G  3.4G  6.0G  36% /\ntmpfs            54M     0   54M   0% /run/user/1000\n\n\n$ top -bn1 | head -n 15\nWarning: Permanently added '192.168.56.14' (ED25519) to the list of known hosts.\r\ntop - 21:35:04 up  3:54,  0 users,  load average: 0.24, 0.05, 0.02\nTasks:  87 total,   1 running,  86 sleeping,   0 stopped,   0 zombie\n%Cpu(s):  0.0 us, 11.5 sy,  0.0 ni, 53.8 id,  0.0 wa, 23.1 hi, 11.5 si,  0.0 st\nMiB Mem :    539.3 total,    233.9 free,     98.0 used,    229.4 buff/cache\nMiB Swap:   2048.0 total,   2034.2 free,     13.7 used.    441.2 avail Mem \n\n    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND\n      1 root      20   0  174944  14108   9912 S   0.0   2.6   0:07.79 systemd\n      2 root      20   0       0      0      0 S   0.0   0.0   0:00.02 kthreadd\n      3 root      20   0       0      0      0 S   0.0   0.0   0:00.00 pool_wo+\n      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+\n      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+\n      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+\n      7 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+\n      9 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker+\n\n\n$ systemctl status memcache\nError: Warning: Permanently added '192.168.56.14' (ED25519) to the list of known hosts.\r\nUnit memcache.service could not be found.\n"
                     },

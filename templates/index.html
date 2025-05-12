@@ -26,42 +26,60 @@
 
                 {% if result.category %}
                     <p><strong>Category:</strong> {{ result.category }}</p>
+                {% endif %}
 
-                    {% if result.result.reasoning %}
-                        <p><strong>Reasoning:</strong> {{ result.result.reasoning }}</p>
-                    {% endif %}
+                {% if result.result.reasoning %}
+                    <p><strong>Reasoning:</strong> {{ result.result.reasoning }}</p>
+                {% endif %}
 
-                    {% if result.category.lower() == "general_query" %}
+                {% if result.category and result.category.lower() == "general_query" %}
+                    {% if result.result.server_outputs %}
                         <h3>General Query Results</h3>
-                        <div class="server-block">
-                            {% for server, info in result.result.server_outputs.items() %}
-                                <h4>{{ server }} ({{ info.ip }})</h4>
-                                <p><strong>Services:</strong> {{ info.services | join(', ') }}</p>
-                                <pre>{{ info.output }}</pre>
-                            {% endfor %}
-                        </div>
-                    {% elif result.category.lower() == "needs_resolution" %}
+                        {% for server, info in result.result.server_outputs.items() %}
+                            <div class="server-block">
+                                <h4>{{ server }} {% if info.ip %}({{ info.ip }}){% endif %}</h4>
+                                {% if info.services %}
+                                    <p><strong>Services:</strong> {{ info.services | join(', ') }}</p>
+                                {% endif %}
+                                {% if info.output %}
+                                    <pre><code>{{ info.output }}</code></pre>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <p>No server outputs returned.</p>
+                    {% endif %}
+                {% elif result.category and result.category.lower() == "needs_resolution" %}
+                    <h3>Issue Resolution</h3>
+                    {% if result.resolution %}
                         <p><strong>Affected Service:</strong> {{ result.resolution.service }}</p>
                         <p><strong>Summary:</strong> {{ result.resolution.summary }}</p>
-                        <p><strong>Resolution Steps:</strong></p>
-                        <ul>
-                            {% for step in result.resolution.steps %}
-                                <li>{{ step }}</li>
-                            {% endfor %}
-                        </ul>
+
+                        {% if result.resolution.steps %}
+                            <p><strong>Resolution Steps:</strong></p>
+                            <ul>
+                                {% for step in result.resolution.steps %}
+                                    <li>{{ step }}</li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+
                         <p><strong>Reasoning:</strong> {{ result.resolution.reasoning }}</p>
+                    {% endif %}
 
-                        {% if result.validation %}
-                            <p><strong>Validation:</strong> {{ result.validation.review_notes }}</p>
-                            <p><strong>Validation Status:</strong> {% if result.validation.approved %}Approved{% else %}Not Approved{% endif %}</p>
-                        {% endif %}
+                    {% if result.validation %}
+                        <h4>Validation</h4>
+                        <p><strong>Notes:</strong> {{ result.validation.review_notes }}</p>
+                        <p><strong>Status:</strong> 
+                            {% if result.validation.approved %}✅ Approved{% else %}❌ Not Approved{% endif %}
+                        </p>
+                    {% endif %}
 
-                        {% if result.execution %}
-                            <p><strong>Execution Status:</strong> {{ result.execution }}</p>
-                        {% endif %}
+                    {% if result.execution %}
+                        <p><strong>Execution Status:</strong> {{ result.execution }}</p>
                     {% endif %}
                 {% else %}
-                    <p><strong>Response:</strong> No category or classification available for this result.</p>
+                    <p><strong>Response:</strong> No specific category matched this issue.</p>
                 {% endif %}
             </div>
             {% endif %}
