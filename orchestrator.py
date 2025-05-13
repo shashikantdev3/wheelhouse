@@ -1,10 +1,13 @@
-from crewai import Crew, Task
 from agents import (
     classify_issue,
     general_query_handler,
     resolve_issue,
-    validate_resolution
+    validate_resolution,
+    executor_agent,
+    infra_config  
 )
+
+
 import json
 
 class SupportCrew:
@@ -34,7 +37,12 @@ class SupportCrew:
             ticket["validation"] = validation
 
             if validation.get("approved"):
-                ticket["execution"] = "Resolution approved. No further steps required."
+                ticket["execution"] = {
+    "status": "awaiting_user_approval",
+    "logic": resolution.get("reasoning", "No reasoning."),
+    "server": next((name for name, data in infra_config.items() if resolution["service"].lower() in [svc.lower() for svc in data["services"]]), "unknown")
+}
+
             else:
                 ticket["execution"] = "Resolution not approved."
 

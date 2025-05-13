@@ -13,6 +13,12 @@
             <p class="subtitle">Your Autonomous IT Support System</p>
         </header>
 
+        {% if message %}
+        <div class="status-message">
+            <p>{{ message }}</p>
+        </div>
+        {% endif %}
+
         <main>
             <form action="/submit" method="POST" class="issue-form">
                 <label for="issue">Describe Your IT Issue</label>
@@ -70,13 +76,21 @@
                     {% if result.validation %}
                         <h4>Validation</h4>
                         <p><strong>Notes:</strong> {{ result.validation.review_notes }}</p>
-                        <p><strong>Status:</strong> 
-                            {% if result.validation.approved %}✅ Approved{% else %}❌ Not Approved{% endif %}
+                        <p><strong>Status:</strong>
+                            {% if result.execution and result.execution.status == "awaiting_user_approval" %}
+                                ⏳ Awaiting User Confirmation
+                            {% elif result.validation.approved %}
+                                ✅ Approved
+                            {% else %}
+                                ❌ Not Approved
+                            {% endif %}
                         </p>
+                    {% else %}
+                        <p><em>Awaiting validation from validator agent...</em></p>
                     {% endif %}
 
                     {% if result.execution %}
-                        <p><strong>Execution Status:</strong> {{ result.execution }}</p>
+                        <p><strong>Execution Status:</strong> {{ result.execution.status }}</p>
                     {% endif %}
                 {% else %}
                     <p><strong>Response:</strong> No specific category matched this issue.</p>

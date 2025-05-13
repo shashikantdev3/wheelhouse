@@ -64,3 +64,71 @@ button:hover {
     margin-top: 30px;
     border-radius: 6px;
 }
+
+.server-block {
+    background-color: #f0f5ff;
+    border: 1px solid #cce0ff;
+    padding: 15px;
+    margin-top: 15px;
+    border-radius: 5px;
+}
+
+pre {
+    background-color: #eef4ff;
+    border: 1px solid #ccd9ff;
+    padding: 10px;
+    overflow-x: auto;
+    border-radius: 5px;
+    color: #002b80;
+}
+
+.status-message {
+    background-color: #d0e1ff;
+    border: 1px solid #99c2ff;
+    padding: 12px 20px;
+    margin-bottom: 20px;
+    border-radius: 6px;
+    font-style: normal;
+    font-weight: bold;
+    color: #0033A0;
+    text-align: center;
+}
+
+.issue-form label {
+    font-weight: bold;
+    display: block;
+    margin-bottom: 10px;
+}
+
+.issue-form textarea {
+    margin-bottom: 10px;
+}
+
+.result-box h3,
+.result-box h4 {
+    margin-top: 20px;
+    color: #00257a;
+}
+
+.result-box ul {
+    padding-left: 20px;
+}
+
+.result-box li {
+    margin-bottom: 5px;
+}
+
+.result-box p em {
+    color: #999;
+    font-style: italic;
+}
+
+.result-box .approved {
+    color: green;
+    font-weight: bold;
+}
+
+.result-box .not-approved {
+    color: red;
+    font-weight: bold;
+}

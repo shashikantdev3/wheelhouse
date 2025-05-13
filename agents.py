@@ -4,6 +4,7 @@ import subprocess
 from langchain_community.llms import Ollama
 from langchain.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
+from langchain.chains import LLMChain
 
 # Load infra config
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), '.', 'infra_config.json')
@@ -42,7 +43,6 @@ def classify_issue(issue: str):
         category = result.get("category", "Uncategorized")
         reason = result.get("reason", "No reasoning provided.")
 
-        # Fallback keyword override
         keywords = ["status", "running", "services", "show", "list", "uptime", "information", "metrics", "usage"]
         if category == "needs_resolution" and any(kw in issue.lower() for kw in keywords):
             return "general_query", reason + " (Overridden by keyword-based fallback.)"
@@ -217,10 +217,70 @@ def resolve_issue(issue: str):
             "reasoning": "N/A"
         }
 
-# --- Validator Agent ---
+# --- LLM-Powered Validator Agent ---
+validation_prompt = PromptTemplate.from_template("""
+You are an IT operations expert responsible for reviewing automated resolution steps.
+
+Resolution Details:
+Service: {service}
+Steps:
+{steps}
+
+Your job is to determine if these steps are safe and reasonable to execute automatically.
+
+Respond strictly in this JSON format:
+{{
+  "approved": true or false,
+  "review_notes": "Brief justification",
+  "allow_delegation": true or false
+}}
+""")
+
+validation_chain = LLMChain(llm=llm, prompt=validation_prompt)
+
 def validate_resolution(resolution: dict):
-    return {
-        "approved": True,
-        "review_notes": "Steps look safe and logical.",
-        "allow_delegation": True
-    }
+    service = resolution.get("service", "")
+    steps = resolution.get("steps", [])
+
+    if not steps:
+        return {
+            "approved": False,
+            "review_notes": "No resolution steps provided.",
+            "allow_delegation": False
+        }
+
+    steps_text = "\n".join(f"- {step}" for step in steps)
+    try:
+        response = validation_chain.run(service=service, steps=steps_text)
+        return json.loads(response)
+    except Exception as e:
+        print(f"[Validator Error] Failed to parse LLM output:\n{response}\nError: {e}")
+        return {
+            "approved": False,
+            "review_notes": "Validation agent returned an invalid response.",
+            "allow_delegation": False
+        }
+
+# --- Executor Agent ---
+def executor_agent(resolution: dict, server_name: str, ip: str):
+    script = " && ".join(resolution.get("steps", []))
+    key_path = f"C:/Users/debna/OneDrive/Desktop/Autonomous-IT-Support-Agent/Local_infra_setup_script_IaC/.vagrant/machines/{server_name}/virtualbox/private_key"
+    if not os.path.exists(key_path):
+        return f"[Error] Private key not found for {server_name} at expected path: {key_path}"
+
+    ssh_cmd = [
+        "ssh",
+        "-i", key_path,
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=/dev/null",
+        f"vagrant@{ip}",
+        script
+    ]
+
+    try:
+        output = subprocess.check_output(ssh_cmd, stderr=subprocess.STDOUT, timeout=30)
+        return output.decode()
+    except subprocess.CalledProcessError as e:
+        return f"Command failed:\n{e.output.decode()}"
+    except Exception as e:
+        return f"Unhandled exception:\n{str(e)}"

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, redirect, url_for, session
 import os
 import json
 from datetime import datetime
@@ -14,6 +14,7 @@ sys.path.append(AGENT_PATH)
 from orchestrator import SupportCrew
 
 app = Flask(__name__)
+app.secret_key = 'your_secret_key_here'  # Required for session
 
 TICKET_FILE = 'tickets/ticket.json'
 os.makedirs(os.path.dirname(TICKET_FILE), exist_ok=True)
@@ -35,24 +36,68 @@ def submit():
 
     output = crew.handle_issue(issue_text)
 
-    # Normalize output to include expected structure
-    result = {
-        "category": output.get("category", "Uncategorized"),
-        "result": output.get("result", {}),
-        "resolution": output.get("resolution"),
-        "validation": output.get("validation"),
-        "execution": output.get("execution")
+    category = output.get("category", "Uncategorized")
+    result = output.get("result", {})
+    resolution = output.get("resolution", None)
+    validation = output.get("validation", None)
+    execution = output.get("execution", None)
+
+    response = {
+        "category": category,
+        "result": result,
     }
+    if resolution:
+        response["resolution"] = resolution
+    if validation:
+        response["validation"] = validation
+    if execution:
+        response["execution"] = execution
 
-    # Print the normalized result object for debugging
-    print("Result object:", json.dumps(result, indent=2))
+    # If execution needs user confirmation, redirect to confirmation page
+    if execution and isinstance(execution, dict) and execution.get("status") == "awaiting_user_approval":
+        session['pending_action'] = {
+            "issue": issue_text,
+            "category": category,
+            "resolution": resolution,
+            "validation": validation,
+            "execution": execution
+        }
+        return redirect(url_for('confirm'))
 
-    # Log ticket
+    # Otherwise, save and show result directly
+    save_ticket(issue_text, response)
+    return render_template("index.html", result=response)
+
+@app.route("/confirm", methods=["GET"])
+def confirm():
+    data = session.get('pending_action')
+    if not data:
+        return redirect(url_for('home'))
+    return render_template("confirm.html", data=data)
+
+@app.route("/confirm_action", methods=["POST"])
+def confirm_action():
+    decision = request.form.get("decision")
+    data = session.pop('pending_action', None)
+
+    if not data:
+        return redirect(url_for('home'))
+
+    if decision == "yes":
+        execution_result = crew.executor.execute_remediation(data["execution"])
+        data["execution"] = execution_result
+    else:
+        data["execution"] = {"status": "cancelled_by_user", "message": "User declined execution."}
+
+    save_ticket(data["issue"], data)
+    return render_template("index.html", result=data)
+
+def save_ticket(issue_text, response):
     ticket = {
         "id": str(uuid.uuid4()),
         "timestamp": datetime.utcnow().isoformat(),
         "issue": issue_text,
-        "result": result
+        "response": response
     }
 
     try:
@@ -70,8 +115,6 @@ def submit():
                 json.dump(data, f, indent=4)
     except Exception as e:
         print(f"Failed to log ticket: {e}")
-
-    return render_template("index.html", result=result)
 
 if __name__ == "__main__":
     app.run(debug=True)

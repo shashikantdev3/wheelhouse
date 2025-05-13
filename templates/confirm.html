@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Confirm Execution</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Execution Approval Needed</h1>
+            <p class="subtitle">Please confirm before proceeding with automation</p>
+        </header>
+
+        <main>
+            <div class="result-box">
+                <h3>Action Details</h3>
+                <p><strong>Service:</strong> {{ data.resolution.service }}</p>
+                <p><strong>Summary:</strong> {{ data.resolution.summary }}</p>
+                <p><strong>Execution Logic:</strong> {{ data.execution.logic }}</p>
+                <p><strong>Target Server:</strong> {{ data.execution.server }}</p>
+                <p><strong>Validation Notes:</strong> {{ data.validation.review_notes }}</p>
+                <p><strong>Approval Status:</strong> ⏳ Awaiting User Confirmation</p>
+
+                <form action="/confirm_action" method="post" style="margin-top: 30px;">
+                    <button type="submit" name="decision" value="yes">✅ Yes, Execute</button>
+                    <button type="submit" name="decision" value="no">❌ No, Cancel</button>
+                </form>
+            </div>
+        </main>
+    </div>
+</body>
+</html>
