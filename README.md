@@ -1,191 +1,169 @@
-# Autonomous IT Support Agentic AI System
+# AI-Powered IT Support Platform
 
-**Automation to Autonomy: Autonomous IT Support Portal**
-
-This system is designed to automate IT support operations by providing users with an intelligent, autonomous agent to classify, triage, and resolve IT issues based on predefined categories. The system utilizes **LLM-powered agents** (Ollama, CrewAI, LangChain) to handle IT issues through a web-based portal.
-
-![Web Interface - UI](docs/images/UI.PNG)
+An intelligent, automated IT support system that combines infrastructure management, knowledge base capabilities, and AI-driven problem resolution.
 
 ## Features
 
-* **Intelligent Issue Detection and Classification**: Classifies IT issues into predefined categories such as **VPN issues**, **Disk Cleanup**, **Network Connectivity**, etc.
-* **Autonomous Issue Resolution**: Generates appropriate solutions based on the classification.
-* **Infra Provisioning**: Automatically provisions infrastructure using **Ansible**, with services like **MySQL**, **Memcache**, **RabbitMQ**, **Tomcat**, **Elasticsearch**, and **Nginx**.
-* **File-Based Ticketing**: Issues are logged with timestamps and categories into a **JSON file** for tracking and analysis.
-* **Modular Agent System**: Utilizes agents like **Issue Classification**, **Ticket Logging**, **Resolution Generation**, and **Infra Provisioning** to maintain separation of concerns.
+### 1. Multi-Agent System
+- **Classifier Agent**: Intelligently categorizes user queries and issues
+- **General Query Agent**: Handles infrastructure status and knowledge-based queries
+- **Resolver Agent**: Generates detailed resolution plans for issues
+- **Validator Agent**: Ensures safety and effectiveness of proposed solutions
+- **Executor Agent**: Safely implements approved solutions
 
-## Architecture Overview
+### 2. Query Types
+- **Infrastructure Queries**: Monitor and manage system status, logs, and metrics
+- **Knowledge Queries**: Get answers to general IT questions using web search
+- **API Queries**: Access documentation and integration details for various services
+- **Problem Resolution**: Automated troubleshooting and fix implementation
 
-![Architecture Diagram](docs/images/Agentic_AI_on_Local_Environment.png)
+### 3. Infrastructure Management
+- Multiple VM support
+- Preconfigured services:
+  - Web Server (Nginx)
+  - Application Server (Tomcat)
+  - Database (MySQL)
+  - Caching (Memcache)
+  - Message Queue (RabbitMQ)
 
-The system is based on the following key components:
+### 4. Modern Web Interface
+- Responsive Bootstrap-based UI
+- Dark mode support
+- Real-time query responses
+- Interactive resolution approval workflow
+- Markdown rendering for documentation
+- Timeline view for execution results
 
-1. **Web Interface (Flask UI)**:
+## Technical Stack
 
-   * Users submit IT issues through a form on a clean, professional interface.
-   * Uses Pantone 293 blue and Helvetica for design, providing a modern and user-friendly experience.
-  
-  ![Agent Response](docs/images/agent_response.PNG)
+### Backend
+- Python 3.x
+- Flask web framework
+- Langchain for LLM integration
+- Ollama/Mistral for local LLM processing
+- DuckDuckGo API for web searches
 
-1. **Agentic AI System**:
+### Frontend
+- Bootstrap 5
+- Font Awesome icons
+- Showdown.js for Markdown rendering
+- Modern JavaScript (ES6+)
 
-   * **Issue Classification Agent**: Analyzes the submitted issue and classifies it into categories.
-   * **Resolver Agent**: Generates possible resolutions or troubleshooting steps for the issue.
-   * **Validator agent**: checks safety and idempotence.
-   * **Executor Agent**: Handles automated service restart or infrastructure provisioning via Ansible and Vagrant for MySQL, Memcache, RabbitMQ, Tomcat, Elasticsearch, and Nginx etc.
-  
-  ![Agent Workflow](docs/images/workflow.png)
+### Infrastructure
+- Vagrant for VM management
+- Infrastructure as Code (IaC)
+- SSH-based remote command execution
+- JSON-based configuration
 
-2. **Language Model Integration**:
+## Setup
 
-   * **Ollama**, **LangChain**, and **CrewAI** are integrated to handle NLP tasks and act as the decision engine for agents.
-
-3. **Logging and Monitoring**:
-
-   * Each agent interaction is logged in a JSON file with detailed metadata (issue type, timestamp, agent actions, etc.)
-
-## Technologies
-
-* **Flask**: Web framework for creating the portal and handling requests.
-* **Python**: For back-end logic and agent integrations.
-* **Ansible**: Automates infrastructure provisioning.
-* **Ollama**: Language model for issue detection and classification.
-* **LangChain**: Helps integrate with agents and language models.
-* **CrewAI**: An additional layer for managing agent flows and interactions.
-* **Vagrant**: Creates virtual machine environments to provision the services.
-
-## Setup Instructions
-
-### Prerequisites
-
-1. **Python 3.x**:
-   Ensure you have Python installed on your system.
-
+1. **Clone the Repository**
    ```bash
-   python --version
+   git clone <repository-url>
+   cd Autonomous-IT-Support-Agent
    ```
 
-2. **Ansible**:
-   Install Ansible for automating the infrastructure provisioning.
-
-   * For Ubuntu:
-
-     ```bash
-     sudo apt update
-     sudo apt install ansible
-     ```
-
-3. **Vagrant**:
-   Install Vagrant for managing virtual machine environments.
-
-   * Download and install from [Vagrant Downloads](https://www.vagrantup.com/downloads).
-
-4. **Flask and other Dependencies**:
-   Install Flask and other dependencies using `requirements.txt`.
-
+2. **Install Dependencies**
    ```bash
    pip install -r requirements.txt
    ```
 
-### File Structure
-
-├── Infra_setup_script_IaC/
-│   ├── Vagrantfile
-│   ├── mysql.yml
-│   ├── memcache.yml
-│   ├── rabbitmq.yml
-│   ├── tomcat.yml
-│   ├── elasticsearch.yml
-│       └── nginx.yml
-├── agents/
-│   ├── issue_classifier_agent.py
-│   ├── ticketing_agent.py
-│   ├── resolver_agent.py
-│   ├── infra_provision_agent.py
-│   └── adhoc_agent.py
-├── static/
-│   └── style.css
-├── templates/
-│   └── index.html
-├── tickets/
-│   └── ticket.json
-├── app.py
-├── agents_manager.py
-├── langchain_setup.py
-├── requirements.txt
-└── README.md
-
-### Steps to Run the System
-
-1. **Setup Flask UI**:
-
-   * Run the Flask application using:
-
+3. **Configure Infrastructure**
+   - Update `infra_config.json` with your VM configurations
+   - Ensure Vagrant is installed
+   - Run the infrastructure setup:
      ```bash
-     python app.py
-     ```
-
-2. **Configure Ansible and Vagrant**:
-
-   * Initialize your VMs by running Vagrant.
-
-     ```bash
+     cd Local_infra_setup_script_IaC
      vagrant up
      ```
-   * Ensure that the Ansible playbooks for MySQL, Memcache, RabbitMQ, Tomcat, Elasticsearch, and Nginx are correctly set up to provision the services.
 
-### 🖥️ Local Infrastructure Setup (IaC Script)
+4. **Configure Environment**
+   - Set up Ollama with Mistral model
+   - Configure logging (optional)
+   - Update API keys if needed
 
-![Local Infra](docs/images/Local_infra.png)
+5. **Start the Application**
+   ```bash
+   python app.py
+   ```
 
-To simplify the provisioning process, a setup script is available in the `Local_infra_setup_script_IaC` directory. This script is designed to automate the creation and configuration of all required infrastructure components via a single command.
+## Usage
 
-📁 Path: `Local_infra_setup_script_IaC/`
-
-📜 Command to run:
-
-```bash
-vagrant up
+### 1. Infrastructure Queries
+```
+"Show me the status of nginx on web01"
+"What's the CPU usage on app01?"
+"Check MySQL logs on db01"
 ```
 
-This command will automatically:
+### 2. Knowledge Queries
+```
+"What is the difference between Docker and Kubernetes?"
+"Explain how load balancing works"
+"Best practices for database backup"
+```
 
-- Spin up Vagrant-managed virtual machines
-- Use bash script to provision the following services:
-  - MySQL
-  - Memcache
-  - RabbitMQ
-  - Tomcat
-  - Elasticsearch
-  - Nginx
+### 3. API Queries
+```
+"Show me ServiceNow API endpoints"
+"How to integrate with Ansible Tower API"
+"Documentation for RabbitMQ REST API"
+```
 
-🛠️ Infrastructure Summary:
+### 4. Problem Resolution
+```
+"Nginx is returning 502 errors"
+"MySQL keeps crashing on db01"
+"High memory usage on app01"
+```
 
-The infrastructure consists of virtual machines configured to host commonly used services in enterprise environments. Each VM is provisioned with one or more of the following:
+## Architecture
 
-| Service         | Description                                           |
-|-----------------|-------------------------------------------------------|
-| MySQL           | Open-source relational database for structured data  |
-| Memcache        | In-memory key-value store for caching                |
-| RabbitMQ        | Message broker for async communication                |
-| Tomcat          | Java servlet container for web apps                  |
-| Elasticsearch   | Full-text search and analytics engine                |
-| Nginx           | Web server and reverse proxy                         |
+```mermaid
+graph TB
+    UI[Web Interface] --> Orchestrator
+    Orchestrator --> Classifier[Classifier Agent]
+    Orchestrator --> General[General Query Agent]
+    Orchestrator --> Resolver[Resolver Agent]
+    Orchestrator --> Validator[Validator Agent]
+    Orchestrator --> Executor[Executor Agent]
+    
+    General --> LLM[Local LLM]
+    General --> WebSearch[Web Search]
+    General --> Infrastructure[Infrastructure]
+    
+    subgraph Infrastructure
+        Nginx[Web01 - Nginx]
+        Tomcat[App01 - Tomcat]
+        MySQL[DB01 - MySQL]
+        Memcache[MC01 - Memcache]
+        RabbitMQ[RMQ01 - RabbitMQ]
+    end
+```
 
-This setup is ideal for testing and validating the full autonomous IT support flow on a local development machine without the need for manual configuration.
+## Security
 
+- SSH key-based authentication for infrastructure access
+- Input validation and sanitization
+- Execution approval workflow
+- Rollback capabilities for failed operations
+- Comprehensive logging and audit trail
 
-## Future Plans
+## Contributing
 
-![Flow Diagram](docs/images/Future_Plans.jpeg)
-
-* **Scaling**: Introduce dynamic scaling of services based on demand.
-* **ServiceNow Integration**: Integrate with an actual ServiceNow system for better ticket management.
-* **Advanced NLP**: Further enhance the language models for better understanding and response quality.
-* **User Authentication**: Implement secure authentication for users accessing the portal.
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
 ## License
 
-This project is open-source and available under the [MIT License](LICENSE).
+This project is licensed under the MIT License - see the LICENSE file for details.
 
----
+## Acknowledgments
+
+- Langchain for LLM integration
+- Ollama/Mistral for local LLM capabilities
+- DuckDuckGo for web search functionality
+- Bootstrap team for the UI framework

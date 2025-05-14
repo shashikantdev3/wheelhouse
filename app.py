@@ -1,99 +1,151 @@
-from flask import Flask, render_template, request, redirect, url_for, session
-from agents import (
-    classify_issue,
-    general_query_handler,
-    resolve_issue,
-    validate_resolution,
-    ExecutorAgent,
-    infra_config
+from flask import Flask, render_template, request, jsonify
+import logging
+from datetime import datetime
+from orchestrator import SupportCrew
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('app.log'),
+        logging.StreamHandler()
+    ]
 )
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-executor_agent = ExecutorAgent()
+support_crew = SupportCrew()
 
-# --- Route: Landing page ---
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/')
 def index():
-    if request.method == 'POST':
-        user_input = request.form['query']
-        session['user_input'] = user_input
+    """Render the main dashboard"""
+    try:
+        return render_template(
+            'index.html',
+            ticket_log=support_crew.get_ticket_log()
+        )
+    except Exception as e:
+        logger.error(f"Error rendering index: {str(e)}", exc_info=True)
+        return render_template('error.html', error=str(e))
 
-        category, reason = classify_issue(user_input)
+@app.route('/submit_issue', methods=['POST'])
+def submit_issue():
+    """Handle issue submission"""
+    try:
+        user_input = request.form.get('issue_description', '')
+        if not user_input.strip():
+            return jsonify({
+                'status': 'error',
+                'message': 'Issue description cannot be empty'
+            }), 400
 
-        if category == "general_query":
-            result = general_query_handler(user_input)
-            return render_template('result.html', category="general_query", result=result)
-
-        elif category == "needs_resolution":
-            resolution = resolve_issue(user_input)
-            validation = validate_resolution(resolution)
-
-            session['resolution'] = resolution
-            session['validation'] = validation
-
-            if validation['approved']:
-                # Find which server the service is on
-                target_server = next(
-                    (server for server, data in infra_config.items()
-                     if resolution['service'].lower() in [svc.lower() for svc in data.get("services", [])]),
-                    None
-                )
-
-                if not target_server:
-                    return render_template('result.html', category="needs_resolution", result={
-                        "error": "Could not find a server responsible for the affected service.",
-                        "resolution": resolution,
-                        "validation": validation
-                    })
-
-                session['target_server'] = target_server
-                session['ip'] = infra_config[target_server]['ip']
-
-                return render_template('permission.html',
-                                       resolution=resolution,
-                                       validation=validation,
-                                       server=target_server)
-
-            else:
-                return render_template('result.html', category="needs_resolution", result={
-                    "error": "Resolution was not approved.",
-                    "resolution": resolution,
-                    "validation": validation
-                })
-
-        else:
-            return render_template('result.html', category="unknown", result={
-                "error": "Could not classify the issue.",
-                "reason": reason
+        # Process the issue
+        result = support_crew.handle_issue(user_input)
+        
+        if result.get('type') == 'knowledge_query':
+            return jsonify({
+                'status': 'success',
+                'type': 'knowledge_query',
+                'data': {
+                    'response': result.get('response', 'No information available.')
+                }
             })
+        
+        elif result.get('type') == 'api_query':
+            return jsonify({
+                'status': 'success',
+                'type': 'api_query',
+                'data': {
+                    'service': result.get('service'),
+                    'response': result.get('response', 'No API information available.')
+                }
+            })
+        
+        elif result.get('type') == 'infrastructure_overview':
+            # Return the infrastructure overview directly
+            return jsonify({
+                'status': result.get('status', 'success'),
+                'type': 'infrastructure_overview',
+                'overview': result.get('overview', {})
+            })
+        
+        elif result.get('type') == 'infrastructure_query':
+            # Return the infrastructure query result directly without wrapping in data
+            return jsonify({
+                'status': result.get('status', 'success'),
+                'type': 'infrastructure_query',
+                'results': result.get('results', {}),
+                'errors': result.get('errors', []),
+                'query': result.get('query', '')
+            })
+        
+        elif result.get('type') == 'resolution':
+            return jsonify({
+                'status': 'success',
+                'type': 'resolution',
+                'data': {
+                    'resolution': result.get('resolution', {}),
+                    'validation': result.get('validation', {}),
+                    'execution': result.get('execution', {})
+                }
+            })
+        
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': result.get('error', 'Unknown error occurred')
+            }), 500
 
-    return render_template('index.html')
+    except Exception as e:
+        logger.error(f"Error processing issue: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': f'Internal server error: {str(e)}'
+        }), 500
 
-# --- Route: Handle user permission to execute resolution ---
-@app.route('/execute', methods=['POST'])
-def execute_resolution():
-    decision = request.form.get("decision")
-    if decision == "yes":
-        resolution = session.get("resolution")
-        server = session.get("target_server")
-        ip = session.get("ip")
+@app.route('/approve_execution', methods=['POST'])
+def approve_execution():
+    """Handle execution approval"""
+    try:
+        ticket_id = request.form.get('ticket_id')
+        execution_data = request.form.get('execution_data')
+        
+        if not ticket_id or not execution_data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing ticket ID or execution data'
+            }), 400
 
-        execution_result = executor_agent.execute_remediation({
-            "resolution": resolution,
-            "server": server,
-            "ip": ip
+        # Execute the approved steps
+        result = support_crew.execute_remediation(ticket_id, execution_data)
+        
+        return jsonify({
+            'status': 'success',
+            'data': result
         })
 
-        return render_template('execution_result.html',
-                               result=execution_result,
-                               resolution=resolution,
-                               server=server)
+    except Exception as e:
+        logger.error(f"Error during execution: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': f'Execution error: {str(e)}'
+        }), 500
 
-    return render_template('execution_result.html',
-                           result="User declined to execute remediation.",
-                           resolution=session.get("resolution"),
-                           server=session.get("target_server"))
+@app.route('/ticket_log')
+def ticket_log():
+    """Get the ticket history"""
+    try:
+        return jsonify({
+            'status': 'success',
+            'tickets': support_crew.get_ticket_log()
+        })
+    except Exception as e:
+        logger.error(f"Error fetching ticket log: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': f'Error fetching ticket log: {str(e)}'
+        }), 500
 
-# --- Main ---
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=5000)
