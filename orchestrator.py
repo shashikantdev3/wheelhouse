@@ -1,10 +1,11 @@
+from orchestrator import SupportCrew
 from agents import (
     classify_issue,
     general_query_handler,
     resolve_issue,
     validate_resolution,
-    executor_agent,
-    infra_config  
+    ExecutorAgent,   # ✅ Correct: importing class
+    infra_config
 )
 
 
@@ -13,6 +14,7 @@ import json
 class SupportCrew:
     def __init__(self):
         self.ticket_log = []
+        self.executor_agent = executor_agent  # ✅ Save executor_agent for later use
 
     def handle_issue(self, user_input: str) -> dict:
         ticket = {"issue": user_input}
@@ -38,11 +40,15 @@ class SupportCrew:
 
             if validation.get("approved"):
                 ticket["execution"] = {
-    "status": "awaiting_user_approval",
-    "logic": resolution.get("reasoning", "No reasoning."),
-    "server": next((name for name, data in infra_config.items() if resolution["service"].lower() in [svc.lower() for svc in data["services"]]), "unknown")
-}
-
+                    "status": "awaiting_user_approval",
+                    "logic": resolution.get("reasoning", "No reasoning."),
+                    "server": next(
+                        (name for name, data in infra_config.items() 
+                         if resolution["service"].lower() in [svc.lower() for svc in data["services"]]
+                        ), 
+                        "unknown"
+                    )
+                }
             else:
                 ticket["execution"] = "Resolution not approved."
 
@@ -53,6 +59,12 @@ class SupportCrew:
             ticket["error"] = "Uncategorized issue."
             self.ticket_log.append(ticket)
             return {"error": "Could not classify the issue."}
+
+    def execute_remediation(self, execution_data: dict) -> dict:
+        """
+        Wrapper to call the executor_agent's remediation logic.
+        """
+        return self.executor_agent.execute_remediation(execution_data)  # ✅ Delegates to imported agent
 
     def get_ticket_log(self) -> list:
         return self.ticket_log

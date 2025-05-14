@@ -261,26 +261,44 @@ def validate_resolution(resolution: dict):
             "allow_delegation": False
         }
 
-# --- Executor Agent ---
-def executor_agent(resolution: dict, server_name: str, ip: str):
-    script = " && ".join(resolution.get("steps", []))
-    key_path = f"C:/Users/debna/OneDrive/Desktop/Autonomous-IT-Support-Agent/Local_infra_setup_script_IaC/.vagrant/machines/{server_name}/virtualbox/private_key"
-    if not os.path.exists(key_path):
-        return f"[Error] Private key not found for {server_name} at expected path: {key_path}"
+# --- Executor Agent (Class version) ---
+class ExecutorAgent:
+    def __init__(self):
+        self.base_key_path = os.path.join(
+            os.path.dirname(__file__),
+            "Local_infra_setup_script_IaC", ".vagrant", "machines"
+        )
 
-    ssh_cmd = [
-        "ssh",
-        "-i", key_path,
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=/dev/null",
-        f"vagrant@{ip}",
-        script
-    ]
+    def execute_remediation(self, execution_data: dict):
+        resolution = execution_data.get("resolution", {})
+        server_name = execution_data.get("server")
+        ip = execution_data.get("ip")
 
-    try:
-        output = subprocess.check_output(ssh_cmd, stderr=subprocess.STDOUT, timeout=30)
-        return output.decode()
-    except subprocess.CalledProcessError as e:
-        return f"Command failed:\n{e.output.decode()}"
-    except Exception as e:
-        return f"Unhandled exception:\n{str(e)}"
+        if not (resolution and server_name and ip):
+            return "[Error] Missing resolution, server name, or IP in execution data."
+
+        script = " && ".join(resolution.get("steps", []))
+        key_path = os.path.join(
+            self.base_key_path,
+            server_name, "virtualbox", "private_key"
+        )
+
+        if not os.path.exists(key_path):
+            return f"[Error] Private key not found for {server_name} at expected path: {key_path}"
+
+        ssh_cmd = [
+            "ssh",
+            "-i", key_path,
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null",
+            f"vagrant@{ip}",
+            script
+        ]
+
+        try:
+            output = subprocess.check_output(ssh_cmd, stderr=subprocess.STDOUT, timeout=30)
+            return output.decode()
+        except subprocess.CalledProcessError as e:
+            return f"Command failed:\n{e.output.decode()}"
+        except Exception as e:
+            return f"Unhandled exception:\n{str(e)}"
