@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, jsonify
 import logging
 from datetime import datetime
 from orchestrator import SupportCrew
+import json
 
 # Configure logging
 logging.basicConfig(
@@ -21,9 +22,10 @@ support_crew = SupportCrew()
 def index():
     """Render the main dashboard"""
     try:
+        tickets = support_crew.get_ticket_log()
         return render_template(
             'index.html',
-            ticket_log=support_crew.get_ticket_log()
+            ticket_log=tickets
         )
     except Exception as e:
         logger.error(f"Error rendering index: {str(e)}", exc_info=True)
@@ -33,75 +35,89 @@ def index():
 def submit_issue():
     """Handle issue submission"""
     try:
-        user_input = request.form.get('issue_description', '')
-        if not user_input.strip():
+        issue_description = request.form.get('issue_description')
+        if not issue_description:
             return jsonify({
                 'status': 'error',
-                'message': 'Issue description cannot be empty'
+                'message': 'No issue description provided'
             }), 400
 
         # Process the issue
-        result = support_crew.handle_issue(user_input)
+        result = support_crew.process_issue(issue_description)
+        logger.info(f"Received result from support_crew: {result}")
+
+        # Prepare response
+        response = {
+            'status': result.get('status', 'error'),
+            'type': result.get('type', 'unknown'),
+            'ticket_log': support_crew.get_ticket_log()
+        }
         
+        # Add type-specific data
         if result.get('type') == 'knowledge_query':
-            return jsonify({
-                'status': 'success',
-                'type': 'knowledge_query',
-                'data': {
-                    'response': result.get('response', 'No information available.')
-                }
-            })
-        
+            summary = result.get('results', {}).get('summary', 'No answer available')
+            # Format summary for HTML display if from knowledge base or LLM (preserve line breaks)
+            source = result.get('results', {}).get('source', 'web search')
+            if source in ['built-in knowledge base', 'llm_knowledge']:
+                summary = summary.replace('\n', '<br>')
+            
+            response['data'] = {
+                'summary': summary,
+                'related_topics': result.get('results', {}).get('related_topics', []),
+                'query': result.get('query', issue_description),
+                'source': source
+            }
         elif result.get('type') == 'api_query':
-            return jsonify({
-                'status': 'success',
-                'type': 'api_query',
-                'data': {
-                    'service': result.get('service'),
-                    'response': result.get('response', 'No API information available.')
-                }
+            response.update({
+                'service': result.get('service', ''),
+                'data': result.get('data', {})
             })
-        
-        elif result.get('type') == 'infrastructure_overview':
-            # Return the infrastructure overview directly
-            return jsonify({
-                'status': result.get('status', 'success'),
-                'type': 'infrastructure_overview',
-                'overview': result.get('overview', {})
-            })
-        
         elif result.get('type') == 'infrastructure_query':
-            # Return the infrastructure query result directly without wrapping in data
-            return jsonify({
-                'status': result.get('status', 'success'),
-                'type': 'infrastructure_query',
-                'results': result.get('results', {}),
-                'errors': result.get('errors', []),
-                'query': result.get('query', '')
-            })
-        
-        elif result.get('type') == 'resolution':
-            return jsonify({
-                'status': 'success',
-                'type': 'resolution',
-                'data': {
-                    'resolution': result.get('resolution', {}),
-                    'validation': result.get('validation', {}),
-                    'execution': result.get('execution', {})
+            # Extract command results for better formatting
+            infrastructure_data = []
+            for server_name, server_info in result.get('results', {}).items():
+                server_data = {
+                    'server': server_name,
+                    'ip': server_info.get('ip', 'Unknown'),
+                    'services': server_info.get('services', []),
+                    'status': 'error',
+                    'output': 'No output available'
                 }
+                
+                # Process command outputs
+                commands = server_info.get('commands', [])
+                if commands:
+                    cmd_result = commands[0]  # Usually just one command per query
+                    server_data['status'] = 'success' if cmd_result.get('success', False) else 'error'
+                    server_data['output'] = cmd_result.get('output', 'No output available')
+                
+                infrastructure_data.append(server_data)
+                
+            response.update({
+                'results': result.get('results', {}),
+                'data': infrastructure_data,
+                'service': result.get('service', '')
             })
-        
-        else:
-            return jsonify({
-                'status': 'error',
-                'message': result.get('error', 'Unknown error occurred')
-            }), 500
+        elif result.get('type') == 'resolution':
+            resolution_data = result.get('resolution', {})
+            validation_data = result.get('validation', {})
+            
+            response['data'] = {
+                'resolution': resolution_data,
+                'validation': validation_data,
+                'approved': validation_data.get('approved', False),
+                'confidence': validation_data.get('confidence', 0.0),
+                'risks': validation_data.get('risks_identified', []),
+                'suggestions': validation_data.get('suggested_modifications', [])
+            }
+
+        return jsonify(response)
 
     except Exception as e:
         logger.error(f"Error processing issue: {str(e)}", exc_info=True)
         return jsonify({
             'status': 'error',
-            'message': f'Internal server error: {str(e)}'
+            'message': str(e)
         }), 500
 
 @app.route('/approve_execution', methods=['POST'])
@@ -109,7 +125,7 @@ def approve_execution():
     """Handle execution approval"""
     try:
         ticket_id = request.form.get('ticket_id')
-        execution_data = request.form.get('execution_data')
+        execution_data = json.loads(request.form.get('execution_data'))
         
         if not ticket_id or not execution_data:
             return jsonify({
@@ -136,9 +152,10 @@ def approve_execution():
 def ticket_log():
     """Get the ticket history"""
     try:
+        tickets = support_crew.get_ticket_log()
         return jsonify({
             'status': 'success',
-            'tickets': support_crew.get_ticket_log()
+            'tickets': tickets
         })
     except Exception as e:
         logger.error(f"Error fetching ticket log: {str(e)}", exc_info=True)

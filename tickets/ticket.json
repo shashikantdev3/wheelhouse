@@ -1,0 +1,102 @@
+[
+  {
+    "id": "TICKET-1",
+    "issue": "List all running processes on web01",
+    "timestamp": "2025-05-16T03:58:38.342712",
+    "status": "success",
+    "category": "infrastructure_query",
+    "service": "",
+    "response": {
+      "status": "success",
+      "type": "infrastructure_query",
+      "results": {
+        "web01": {
+          "ip": "192.168.56.11",
+          "services": [
+            "nginx"
+          ],
+          "commands": [
+            {
+              "success": true,
+              "output": "root        4676  0.0  0.2  55232  1648 ?        Ss   19:50   0:00 nginx: master process /usr/sbin/nginx -g daemon on; master_process on;\nwww-data    4677  0.0  0.5  55864  4468 ?        S    19:50   0:00  \\_ nginx: worker process\nwww-data    4678  0.0  0.6  55864  4580 ?        S    19:50   0:01  \\_ nginx: worker process",
+              "return_code": 0
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "id": "TICKET-2",
+    "issue": "Show open ports on web01",
+    "timestamp": "2025-05-16T03:59:14.399550",
+    "status": "success",
+    "category": "infrastructure_query",
+    "service": "",
+    "response": {
+      "status": "success",
+      "type": "infrastructure_query",
+      "results": {
+        "web01": {
+          "ip": "192.168.56.11",
+          "services": [
+            "nginx"
+          ],
+          "commands": [
+            {
+              "success": false,
+              "output": "bash: -c: line 1: syntax error near unexpected token `('\nbash: -c: line 1: `sudo lsof -i :80,443 -n -P | grep LISTEN This command will list open ports 80 (for HTTP) and 443 (for HTTPS), which are typically used by nginx service on Ubuntu. The -n option is used to display the FQDN or IP address instead of process IDs, and -P ensures that PID names are not mangled by the SELinux context. The output will show only the processes that are listening (LISTEN) on those ports.'",
+              "return_code": 1
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "id": "TICKET-3",
+    "issue": "What is the status of the Memcache service on mc01?",
+    "timestamp": "2025-05-16T04:00:18.293885",
+    "status": "success",
+    "category": "knowledge_query",
+    "service": "",
+    "response": {
+      "status": "success",
+      "type": "knowledge_query",
+      "query": "What is the status of the Memcache service on mc01?",
+      "results": {
+        "summary": "To determine the status of the Memcached service on the server 'mc01', you can follow these steps:\n\n1. First, open a terminal or command prompt and connect to the server 'mc01' using SSH (Secure Shell) if you are not already logged in.\n\n2. Once connected, use the following command to check the status of the Memcached service:\n\n   ```\n   systemctl status memcached\n   ```\n\n   This command will display information about the Memcached service, including its current state (active or inactive), whether it is enabled on boot, and any error messages that may have occurred.\n\n3. If the output shows that the Memcached service is active (running) and enabled, then it is functioning correctly. If the service is inactive or disabled, you will need to investigate further to determine why it is not running and take appropriate action to resolve the issue.\n\n4. To check if Memcached is listening on its default port (11211), you can use the following command:\n\n   ```\n   netstat -tuln | grep memcached\n   ```\n\n   This command will display a list of network connections, and if Memcached is running and listening on the correct port, you should see an entry for it in the output.\n\n5. If you are still experiencing issues with the Memcached service on 'mc01', you may want to consult your system documentation or reach out to your IT support team for further assistance.",
+        "related_topics": [],
+        "query": "What is the status of the Memcache service on mc01?",
+        "source": "llm_knowledge"
+      }
+    }
+  },
+  {
+    "id": "TICKET-4",
+    "issue": "Is the Tomcat service up on app01?",
+    "timestamp": "2025-05-16T04:01:01.974793",
+    "status": "success",
+    "category": "infrastructure_query",
+    "service": "",
+    "response": {
+      "status": "success",
+      "type": "infrastructure_query",
+      "results": {
+        "app01": {
+          "ip": "192.168.56.12",
+          "services": [
+            "tomcat"
+          ],
+          "commands": [
+            {
+              "success": true,
+              "output": "\u25cf tomcat.service - Tomcat\n     Loaded: loaded (/etc/systemd/system/tomcat.service; enabled; preset: disabled)\n     Active: active (running) since Thu 2025-05-15 21:26:32 UTC; 1h 4min ago\n   Main PID: 27758 (java)\n      Tasks: 34 (limit: 4442)\n     Memory: 355.8M\n        CPU: 2min 37.103s\n     CGroup: /system.slice/tomcat.service\n             \u2514\u250027758 /usr/lib/jvm/jre/bin/java -Djava.util.logging.config.file=/usr/local/tomcat/conf/logging.properties -Djava.util.logging.manager=org.apache.juli.ClassLoaderLogManager -Djdk.tls.ephemeralDHKeySize=2048 -Djava.protocol.handler.pkgs=org.apache.catalina.webresources -Dorg.apache.catalina.security.SecurityListener.UMASK=0027 --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.rmi/sun.rmi.transport=ALL-UNNAMED -classpath /usr/local/tomcat/bin/bootstrap.jar:/usr/local/tomcat/bin/tomcat-juli.jar -Dcatalina.base=/usr/local/tomcat -Dcatalina.home=/usr/local/tomcat -Djava.io.tmpdir=/usr/local/tomcat/temp org.apache.catalina.startup.Bootstrap start",
+              "return_code": 0
+            }
+          ]
+        }
+      }
+    }
+  }
+]

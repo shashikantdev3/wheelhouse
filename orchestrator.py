@@ -1,14 +1,14 @@
+from flask import Flask, render_template, request, jsonify
+import logging
+from datetime import datetime
 from agents import (
-    classify_issue,
-    general_query_handler,
-    resolve_issue,
-    validate_resolution,
-    ExecutorAgent,
+    SupportCrew as AgentCrew,
     infra_config
 )
 import json
-import logging
-import datetime
+import os
+from pathlib import Path
+from typing import Dict, List
 
 # Configure logging
 logging.basicConfig(
@@ -19,125 +19,108 @@ logger = logging.getLogger(__name__)
 
 class SupportCrew:
     def __init__(self):
+        """Initialize the support crew with necessary agents"""
+        self.agent_crew = AgentCrew()
         self.ticket_log = []
-        self.executor_agent = ExecutorAgent()  # Initialize the ExecutorAgent
+        self._load_tickets()
         logger.info("SupportCrew initialized with ExecutorAgent")
 
-    def handle_issue(self, user_input: str) -> dict:
-        """Handle user issues and queries with improved error handling"""
-        if not user_input or not user_input.strip():
-            return {
-                "status": "error",
-                "error": "Empty query provided"
+    def process_issue(self, issue_description: str) -> Dict:
+        """Process a new issue and generate appropriate response"""
+        try:
+            # Create new ticket
+            ticket = {
+                "id": f"TICKET-{len(self.ticket_log) + 1}",
+                "issue": issue_description,
+                "timestamp": datetime.now().isoformat(),
+                "status": "pending"
             }
 
-        ticket = {
-            "issue": user_input,
-            "timestamp": datetime.datetime.now().isoformat()
-        }
-        logger.info(f"Processing new ticket: {user_input[:100]}...")
+            # Process the issue using the multi-agent system
+            result = self.agent_crew.process_request(issue_description)
+            
+            # Extract category information from the result
+            if result.get("status") == "success":
+                ticket.update({
+                    "category": result.get("type", "unknown"),
+                    "service": result.get("service", "")
+                })
+            
+            # Update ticket with result
+            ticket["status"] = result.get("status", "error")
+            ticket["response"] = result
 
-        try:
-            # Step 1: Classify the issue
-            category, reason, service = classify_issue(user_input)
-            if category == "uncategorized":
-                return {
-                    "status": "error",
-                    "error": reason
-                }
+            # Add to ticket log
+            self.ticket_log.append(ticket)
+            self._save_tickets()
 
-            ticket["category"] = category
-            ticket["classification_reason"] = reason
-            ticket["service"] = service
-            logger.info(f"Issue classified as: {category}")
-
-            # Handle different query types
-            if category in ["general_query", "api_query", "knowledge_query"]:
-                result = general_query_handler(user_input)
-                if not result:
-                    return {
-                        "status": "error",
-                        "error": "Failed to process query"
-                    }
-                
-                if result.get("status") == "error":
-                    return result
-
-                # If it's an infrastructure overview, return it directly
-                if result.get("type") == "infrastructure_overview":
-                    ticket["response"] = result
-                    self.ticket_log.append(ticket)
-                    return result
-
-                # For other query types
-                ticket["response"] = result
-                self.ticket_log.append(ticket)
-                return result
-
-            elif category == "needs_resolution":
-                # Step 2: Generate resolution plan
-                resolution = resolve_issue(user_input)
-                if not resolution or resolution.get("status") == "error":
-                    return {
-                        "status": "error",
-                        "error": resolution.get("error", "Failed to generate resolution plan")
-                    }
-
-                ticket["resolution"] = resolution
-                logger.info("Resolution plan generated")
-
-                # Step 3: Validate the resolution
-                validation = validate_resolution(resolution)
-                if not validation:
-                    return {
-                        "status": "error",
-                        "error": "Failed to validate resolution plan"
-                    }
-
-                ticket["validation"] = validation
-                logger.info(f"Resolution validation: {'approved' if validation.get('approved') else 'rejected'}")
-
-                # Add the ticket to the log
-                self.ticket_log.append(ticket)
-
-                return {
-                    "status": "success",
-                    "type": "resolution",
-                    "resolution": resolution,
-                    "validation": validation
-                }
-
-            else:
-                return {
-                    "status": "error",
-                    "error": f"Unsupported query category: {category}"
-                }
+            return result
 
         except Exception as e:
-            logger.error(f"Error in handle_issue: {str(e)}", exc_info=True)
+            logger.error(f"Error processing issue: {str(e)}", exc_info=True)
             return {
                 "status": "error",
                 "error": str(e)
             }
 
     def execute_remediation(self, ticket_id: str, execution_data: dict) -> dict:
-        """
-        Execute approved remediation steps with proper logging and error handling
-        """
-        logger.info(f"Executing remediation for ticket {ticket_id}")
+        """Execute approved remediation steps"""
         try:
-            result = self.executor_agent.execute_remediation(execution_data)
-            logger.info(f"Remediation execution completed for ticket {ticket_id}")
+            # Validate ticket exists
+            ticket = next((t for t in self.ticket_log if t["id"] == ticket_id), None)
+            if not ticket:
+                raise ValueError(f"Ticket {ticket_id} not found")
+
+            # Execute remediation
+            result = self.agent_crew.execute_resolution(execution_data)
+            
+            # Update ticket with execution result
+            if ticket:
+                ticket["execution_result"] = result
+                ticket["status"] = "completed" if result.get("status") == "completed" else "failed"
+                self._save_tickets()
+
             return result
+
         except Exception as e:
-            logger.error(f"Error executing remediation for ticket {ticket_id}: {str(e)}", exc_info=True)
+            logger.error(f"Error during remediation execution: {str(e)}", exc_info=True)
             return {
                 "status": "error",
                 "error": str(e)
             }
 
-    def get_ticket_log(self) -> list:
+    def get_ticket_log(self) -> List[Dict]:
+        """Get the ticket history"""
         return self.ticket_log
+
+    def _load_tickets(self):
+        """Load tickets from file"""
+        try:
+            ticket_file = os.path.join(os.path.dirname(__file__), 'tickets', 'ticket.json')
+            os.makedirs(os.path.dirname(ticket_file), exist_ok=True)
+            
+            if os.path.exists(ticket_file):
+                with open(ticket_file, 'r') as f:
+                    self.ticket_log = json.load(f)
+            else:
+                self.ticket_log = []
+                
+        except Exception as e:
+            logger.error(f"Error loading tickets: {str(e)}", exc_info=True)
+            self.ticket_log = []
+
+    def _save_tickets(self):
+        """Save tickets to file"""
+        try:
+            ticket_file = os.path.join(os.path.dirname(__file__), 'tickets', 'ticket.json')
+            os.makedirs(os.path.dirname(ticket_file), exist_ok=True)
+            
+            with open(ticket_file, 'w') as f:
+                json.dump(self.ticket_log, f, indent=2)
+            logger.info(f"Saved {len(self.ticket_log)} tickets to {ticket_file}")
+            
+        except Exception as e:
+            logger.error(f"Error saving tickets: {str(e)}", exc_info=True)
 
 # Example usage
 if __name__ == "__main__":
@@ -149,7 +132,7 @@ if __name__ == "__main__":
             user_issue = input("Describe your issue: ")
             if user_issue.strip().lower() in ["exit", "quit"]:
                 break
-            result = crew.handle_issue(user_issue)
+            result = crew.process_issue(user_issue)
             print("\n--- Result ---")
             print(json.dumps(result, indent=2))
         except KeyboardInterrupt:

@@ -1,38 +1,38 @@
-# AI-Powered IT Support Platform
+# Autonomous IT Support Agent
 
-An intelligent, automated IT support system that combines infrastructure management, knowledge base capabilities, and AI-driven problem resolution.
+A robust, extensible, and secure AI-powered IT support platform for infrastructure monitoring, troubleshooting, and automation.
 
 ## Features
+- Modular plugin architecture for services and commands
+- Secure command execution (whitelisting, RBAC, audit logging)
+- Automated and interactive troubleshooting
+- API documentation and integration knowledge base
+- Real-time health dashboard and alerting
+- Asynchronous, scalable job execution
+- LLM-powered remediation and knowledge queries
 
-### 1. Multi-Agent System
-- **Classifier Agent**: Intelligently categorizes user queries and issues
-- **General Query Agent**: Handles infrastructure status and knowledge-based queries
-- **Resolver Agent**: Generates detailed resolution plans for issues
-- **Validator Agent**: Ensures safety and effectiveness of proposed solutions
-- **Executor Agent**: Safely implements approved solutions
+## Project Structure
+- `core/` - Core logic (command execution, security, logging)
+- `plugins/` - Service and command plugins
+- `api/` - REST API endpoints
+- `ui/` - Frontend dashboard
+- `config/` - Infrastructure, RBAC, and command configs
 
-### 2. Query Types
-- **Infrastructure Queries**: Monitor and manage system status, logs, and metrics
-- **Knowledge Queries**: Get answers to general IT questions using web search
-- **API Queries**: Access documentation and integration details for various services
-- **Problem Resolution**: Automated troubleshooting and fix implementation
+## Setup
+1. Clone the repo
+2. Install requirements: `pip install -r requirements.txt`
+3. Configure infrastructure and RBAC in `config/`
+4. Run the backend: `python api/main.py`
+5. Open the dashboard in your browser
 
-### 3. Infrastructure Management
-- Multiple VM support
-- Preconfigured services:
-  - Web Server (Nginx)
-  - Application Server (Tomcat)
-  - Database (MySQL)
-  - Caching (Memcache)
-  - Message Queue (RabbitMQ)
+## Extending
+- Add new services/commands as plugins in `plugins/`
+- Update RBAC and command templates in `config/`
 
-### 4. Modern Web Interface
-- Responsive Bootstrap-based UI
-- Dark mode support
-- Real-time query responses
-- Interactive resolution approval workflow
-- Markdown rendering for documentation
-- Timeline view for execution results
+## Security
+- All actions are logged
+- Only whitelisted commands can be executed
+- Role-based access control for sensitive actions
 
 ## Technical Stack
 
@@ -54,38 +54,6 @@ An intelligent, automated IT support system that combines infrastructure managem
 - Infrastructure as Code (IaC)
 - SSH-based remote command execution
 - JSON-based configuration
-
-## Setup
-
-1. **Clone the Repository**
-   ```bash
-   git clone <repository-url>
-   cd Autonomous-IT-Support-Agent
-   ```
-
-2. **Install Dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Configure Infrastructure**
-   - Update `infra_config.json` with your VM configurations
-   - Ensure Vagrant is installed
-   - Run the infrastructure setup:
-     ```bash
-     cd Local_infra_setup_script_IaC
-     vagrant up
-     ```
-
-4. **Configure Environment**
-   - Set up Ollama with Mistral model
-   - Configure logging (optional)
-   - Update API keys if needed
-
-5. **Start the Application**
-   ```bash
-   python app.py
-   ```
 
 ## Usage
 
@@ -140,22 +108,6 @@ graph TB
         RabbitMQ[RMQ01 - RabbitMQ]
     end
 ```
-
-## Security
-
-- SSH key-based authentication for infrastructure access
-- Input validation and sanitization
-- Execution approval workflow
-- Rollback capabilities for failed operations
-- Comprehensive logging and audit trail
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
 
 ## License
 

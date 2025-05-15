@@ -1,0 +1,1709 @@
+import os
+import json
+import subprocess
+import logging
+from typing import Dict, List, Tuple, Optional
+from dataclasses import dataclass
+from langchain_community.llms import Ollama
+from langchain.prompts import PromptTemplate
+from langchain.memory import ConversationBufferMemory
+from langchain.chains import LLMChain
+import datetime
+import requests
+from urllib.parse import quote_plus
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Load infra config
+CONFIG_FILE = os.path.join(os.path.dirname(__file__), 'infra_config.json')
+infra_config = {}
+
+try:
+    if not os.path.exists(CONFIG_FILE):
+        raise FileNotFoundError(f"Configuration file not found: {CONFIG_FILE}")
+    
+    with open(CONFIG_FILE, 'r') as f:
+        infra_config = json.load(f)
+        
+        if not isinstance(infra_config, dict):
+            raise ValueError("Invalid configuration format: expected a dictionary")
+        
+        # Validate the configuration
+        required_fields = ["ip", "os", "services"]
+        for server, config in infra_config.items():
+            missing_fields = [field for field in required_fields if field not in config]
+            if missing_fields:
+                raise ValueError(f"Missing required fields {missing_fields} in configuration for server {server}")
+        
+        logger.info(f"Successfully loaded configuration for {len(infra_config)} servers")
+except Exception as e:
+    logger.error(f"Error loading infrastructure configuration: {str(e)}", exc_info=True)
+    infra_config = {}  # Initialize with empty dict to prevent NoneType errors
+
+llm = Ollama(
+    model="mistral",
+    temperature=0.2,  # Lower temperature for more consistent responses
+    stop=["</s>", "```json"],  # Stop tokens to ensure clean JSON output
+)
+memory = ConversationBufferMemory()
+
+@dataclass
+class ServerCommand:
+    command: str
+    timeout: int = 30
+    expected_return_code: int = 0
+
+# Enhanced command mapping with timeouts and expected return codes
+COMMAND_GROUPS = {
+    "basic_health": [
+        ServerCommand("uptime", timeout=5),
+        ServerCommand("free -m", timeout=5),
+        ServerCommand("df -h", timeout=5),
+        ServerCommand("cat /proc/loadavg", timeout=5)
+    ],
+    "service_status": [
+        ServerCommand("systemctl status {service}", timeout=10)
+    ],
+    "process": [
+        ServerCommand("top -b -n1", timeout=10)
+    ],
+    "tomcat": [
+        ServerCommand("systemctl status tomcat", timeout=10)
+    ],
+    "mysql": [
+        ServerCommand("systemctl status mariadb", timeout=10),
+        ServerCommand("sudo tail -n 100 /var/log/mariadb/mariadb.log 2>/dev/null || sudo tail -n 100 /var/log/mysql/error.log 2>/dev/null", timeout=15),
+        ServerCommand("sudo tail -n 50 /var/log/mariadb/mariadb-slow.log 2>/dev/null || sudo tail -n 50 /var/log/mysql/mysql-slow.log 2>/dev/null", timeout=15),
+        ServerCommand("mysql -V", timeout=5),
+        ServerCommand("sudo mysqladmin status", timeout=10),
+        ServerCommand("sudo mysqladmin extended-status | grep -E 'Questions|Slow_queries|Threads|Connections'", timeout=10),
+        ServerCommand("sudo find /var/log -name '*mysql*.log' -o -name '*mariadb*.log' -type f -exec ls -l {} \\;", timeout=10)
+    ]
+}
+
+# Knowledge Base for Common APIs and Services
+KNOWLEDGE_BASE = {
+    "servicenow": {
+        "base_url": "https://instance.service-now.com/api",
+        "common_endpoints": {
+            "incident": "/now/table/incident",
+            "problem": "/now/table/problem",
+            "change_request": "/now/table/change_request",
+            "user": "/now/table/sys_user",
+            "group": "/now/table/sys_user_group"
+        },
+        "auth_method": "Basic/OAuth",
+        "docs_url": "https://developer.servicenow.com/dev.do#!/reference/api/latest/rest/"
+    },
+    "ansible": {
+        "base_url": "http://ansible-tower/api/v2",
+        "common_endpoints": {
+            "inventory": "/inventories/",
+            "job_templates": "/job_templates/",
+            "projects": "/projects/",
+            "jobs": "/jobs/",
+            "hosts": "/hosts/"
+        },
+        "auth_method": "OAuth2/Token",
+        "docs_url": "https://docs.ansible.com/ansible-tower/latest/html/towerapi/api_ref.html"
+    }
+}
+
+# --- Issue Classifier Agent ---
+CATEGORY_DEFINITIONS = {
+    "general_query": {
+        "description": "Requests for information about infrastructure, system status, logs, metrics, or data retrieval",
+        "patterns": {
+            "infrastructure": [
+                r"show (me |the )?status",
+                r"check.*status",
+                r"get.*status",
+                r"monitor",
+                r"health",
+                r"list.*services",
+                r"running",
+                r"uptime",
+                r"(cpu|memory|disk).*usage",
+                r"how.*much.*cpu",
+                r"performance",
+                r"load",
+                r"utilization"
+            ],
+            "targets": [
+                r"server",
+                r"service",
+                r"process",
+                r"port",
+                r"connection",
+                r"cpu",
+                r"memory",
+                r"disk"
+            ]
+        }
+    },
+    "knowledge_query": {
+        "description": "Questions requiring general knowledge, explanations, or comparisons",
+        "patterns": {
+            "question_types": [
+                r"what\s+is",
+                r"how\s+does",
+                r"explain",
+                r"describe",
+                r"difference\s+between",
+                r"compare",
+                r"what\s+are",
+                r"how\s+to",
+                r"why\s+does",
+                r"when\s+to",
+                r"tell\s+me\s+about"
+            ],
+            "learning_indicators": [
+                r"understand",
+                r"learn",
+                r"concept",
+                r"definition",
+                r"meaning",
+                r"purpose",
+                r"benefits?"
+            ]
+        }
+    },
+    "api_query": {
+        "description": "Questions about API endpoints, documentation, or integration details",
+        "patterns": {
+            "api_indicators": [
+                r"api",
+                r"endpoint",
+                r"integration",
+                r"interface",
+                r"swagger",
+                r"openapi",
+                r"rest",
+                r"soap",
+                r"graphql"
+            ],
+            "api_actions": [
+                r"authenticate",
+                r"authorize",
+                r"call",
+                r"request",
+                r"response",
+                r"payload",
+                r"parameter"
+            ]
+        },
+        "services": {
+            "servicenow": [r"service\s*now", r"snow"],
+            "ansible": [r"ansible", r"tower", r"awx"],
+            "kubernetes": [r"kubernetes", r"k8s", r"kubectl"],
+            "docker": [r"docker", r"container"],
+            "jenkins": [r"jenkins", r"ci", r"cd", r"pipeline"]
+        }
+    },
+    "needs_resolution": {
+        "description": "Issues requiring troubleshooting or fixing",
+        "patterns": {
+            "error_indicators": [
+                r"error",
+                r"fail(ed|ing)?",
+                r"broken",
+                r"crash(ed|ing)?",
+                r"not\s+working",
+                r"down",
+                r"stopped",
+                r"unresponsive",
+                r"issue",
+                r"problem",
+                r"bug",
+                r"exception"
+            ],
+            "resource_issues": [
+                r"high\s+(cpu|memory|disk|load)",
+                r"(running|getting)\s+out\s+of\s+(memory|space|cpu)",
+                r"performance\s+(issue|problem|degradation)",
+                r"slow",
+                r"hang(ing|ed)?",
+                r"bottleneck",
+                r"overload(ed)?",
+                r"full",
+                r"leak"
+            ]
+        }
+    }
+}
+
+classifier_template = PromptTemplate.from_template("""You are an experienced IT Support Agent with deep knowledge of system administration, cloud services, and infrastructure management.
+
+Your task is to classify the following IT support query into the most appropriate category based on these detailed definitions:
+
+{category_definitions}
+
+Consider the context, intent, and technical implications when classifying. Look for:
+1. Primary purpose of the query (information, resolution, knowledge, integration)
+2. Technical components mentioned (services, infrastructure, APIs)
+3. Urgency and severity indicators
+4. Required type of response (information retrieval, troubleshooting, explanation)
+
+User Query: {issue}
+
+Respond ONLY in this exact JSON format:
+{{
+  "category": "<category_name>",
+  "reason": "<detailed_reasoning>",
+  "confidence": <0.0-1.0>,
+  "service": "<identified_service_if_any>",
+  "severity": "<high|medium|low>",  # Only for needs_resolution
+  "sub_category": "<specific_type_within_category>",  # Optional
+  "keywords_matched": ["<keyword1>", "<keyword2>"]  # List of significant terms identified
+}}""")
+
+def get_api_information(service: str, query: str) -> Dict:
+    """Get API information from knowledge base or web search"""
+    service = service.lower()
+    
+    # Check knowledge base first
+    if service in KNOWLEDGE_BASE:
+        return {
+            "status": "success",
+            "source": "knowledge_base",
+            "data": KNOWLEDGE_BASE[service]
+        }
+    
+    # If not in knowledge base, search online
+    try:
+        search_query = f"{service} API documentation endpoints"
+        search_url = f"https://api.duckduckgo.com/?q={quote_plus(search_query)}&format=json"
+        response = requests.get(search_url)
+        
+        if response.status_code == 200:
+            return {
+                "status": "success",
+                "source": "web_search",
+                "data": {
+                    "search_results": response.json(),
+                    "query": search_query
+                }
+            }
+        else:
+            return {
+                "status": "error",
+                "error": "Failed to fetch online documentation"
+            }
+    except Exception as e:
+        logger.error(f"Error searching API documentation: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+def get_knowledge_information(query: str) -> Dict:
+    """Get information from web search for knowledge queries"""
+    try:
+        # Check if this is an Ansible Tower API query
+        if "ansible tower api" in query.lower():
+            # Return predefined Ansible Tower API information
+            return {
+                "status": "success",
+                "source": "knowledge_base",
+                "data": {
+                    "main_answer": """### Ansible Tower API Integration
+
+The Ansible Tower API provides a RESTful interface for automating and managing your Ansible infrastructure.
+
+#### Basic Integration Steps:
+
+1. **Authentication**
+   - Generate an OAuth2 token or use Basic Auth
+   - Include token in request headers: `Authorization: Bearer <token>`
+
+2. **Common Endpoints**
+   - Jobs: `/api/v2/jobs/`
+   - Inventories: `/api/v2/inventories/`
+   - Projects: `/api/v2/projects/`
+   - Templates: `/api/v2/job_templates/`
+   - Organizations: `/api/v2/organizations/`
+
+3. **Example Usage**:
+```python
+import requests
+
+TOWER_URL = "https://tower.example.com"
+HEADERS = {
+    "Authorization": "Bearer <your_token>",
+    "Content-Type": "application/json"
+}
+
+# List job templates
+response = requests.get(f"{TOWER_URL}/api/v2/job_templates/", headers=HEADERS)
+
+# Launch a job template
+template_id = "123"
+response = requests.post(
+    f"{TOWER_URL}/api/v2/job_templates/{template_id}/launch/",
+    headers=HEADERS
+)
+```""",
+                    "related_information": [
+                        "The API uses standard HTTP methods (GET, POST, PUT, DELETE) for operations",
+                        "Responses are in JSON format with pagination for list endpoints",
+                        "API versions are specified in the URL path (/api/v2/)",
+                        "Detailed documentation available at your Tower instance: https://<tower-host>/api/v2/docs/"
+                    ]
+                }
+            }
+
+        # For comparison queries, split the query to get the items being compared
+        items = []
+        if "difference between" in query.lower():
+            parts = query.lower().split("difference between")[-1].split("and")
+            items = [item.strip().strip('?') for item in parts if item.strip()]
+            
+        # Create appropriate search query
+        if len(items) == 2:
+            search_query = f"compare {items[0]} vs {items[1]} key differences technical explanation"
+        else:
+            search_query = query.strip('?')  # Remove question mark for better search results
+
+        logger.info(f"Performing web search with query: {search_query}")
+
+        # Perform web search
+        search_url = f"https://api.duckduckgo.com/?q={quote_plus(search_query)}&format=json"
+        try:
+            response = requests.get(search_url, timeout=10)
+            response.raise_for_status()  # Raise exception for bad status codes
+            data = response.json()
+        except requests.RequestException as e:
+            logger.error(f"Web search request failed: {str(e)}")
+        return {
+                "status": "error",
+                "error": f"Failed to fetch information: {str(e)}"
+            }
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse search response: {str(e)}")
+            # Fall back to LLM for general knowledge
+            try:
+                llm_response = llm.invoke(query)
+                return {
+                    "status": "success",
+                    "source": "llm",
+                    "data": {
+                        "main_answer": llm_response.content if hasattr(llm_response, 'content') else str(llm_response),
+                        "related_information": []
+                    }
+                }
+            except Exception as llm_error:
+                logger.error(f"LLM fallback failed: {str(llm_error)}")
+                return {
+                    "status": "error",
+                    "error": "Failed to retrieve information from all available sources"
+                }
+
+        # Initialize response structure
+        formatted_response = {
+            "main_answer": "",
+            "related_information": []
+        }
+
+        # For comparison queries, create a structured response
+        if len(items) == 2:
+            # Use LLM to generate a comparison
+            comparison_prompt = f"""Compare {items[0]} and {items[1]} in terms of their key differences and use cases.
+            Focus on technical aspects and provide clear, factual information.
+            Format the response with clear sections and bullet points."""
+            
+            try:
+                comparison = llm.invoke(comparison_prompt)
+                formatted_response["main_answer"] = comparison.content if hasattr(comparison, 'content') else str(comparison)
+            except Exception as e:
+                logger.error(f"Failed to generate comparison using LLM: {str(e)}")
+                # Fall back to search results
+                formatted_response["main_answer"] = f"Key differences between {items[0]} and {items[1]}:\n\n"
+        
+        # If no LLM-generated comparison or not a comparison query, process search results
+        if not formatted_response["main_answer"]:
+            # Try different fields in order of preference
+            for field in ['Abstract', 'AbstractText', 'Definition', 'Answer']:
+                if data.get(field):
+                    formatted_response["main_answer"] = data[field]
+                    break
+            
+            # If still no main answer, try RelatedTopics
+            if not formatted_response["main_answer"] and data.get('RelatedTopics'):
+                for topic in data['RelatedTopics']:
+                    if isinstance(topic, dict) and topic.get('Text'):
+                        formatted_response["main_answer"] = topic['Text']
+                        break
+
+        # Add related information from topics
+        if data.get('RelatedTopics'):
+            for topic in data['RelatedTopics'][:3]:  # Limit to top 3 related topics
+                if isinstance(topic, dict) and topic.get('Text'):
+                    if topic['Text'] != formatted_response["main_answer"]:  # Avoid duplicating main answer
+                        formatted_response["related_information"].append(topic['Text'])
+
+        # If still no answer found, use LLM as a fallback
+        if not formatted_response["main_answer"]:
+            try:
+                fallback_response = llm.invoke(query)
+                formatted_response["main_answer"] = fallback_response.content if hasattr(fallback_response, 'content') else str(fallback_response)
+    except Exception as e:
+                logger.error(f"Failed to generate fallback response using LLM: {str(e)}")
+                formatted_response["main_answer"] = (
+                    "I apologize, but I couldn't find a direct answer to your question. "
+                    "Please try rephrasing or being more specific. "
+                    "You might also want to check official documentation or technical forums for detailed information."
+                )
+
+        logger.info("Successfully retrieved and formatted knowledge information")
+        return {
+            "status": "success",
+            "source": "web_search",
+            "data": formatted_response
+        }
+
+    except Exception as e:
+        logger.error(f"Unexpected error during knowledge search: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "error": f"An unexpected error occurred: {str(e)}"
+        }
+
+def format_api_response(api_info: Dict) -> str:
+    """Format API information for display with improved structure and examples"""
+    if api_info["source"] == "knowledge_base":
+        data = api_info["data"]
+        response_parts = []
+        
+        # Add base URL section
+        response_parts.append(f"### Base URL\n`{data['base_url']}`\n")
+        
+        # Add endpoints section with descriptions
+        response_parts.append("### Common Endpoints")
+        for endpoint, path in data["common_endpoints"].items():
+            # Add descriptions for ServiceNow endpoints
+            if "servicenow" in data["base_url"].lower():
+                descriptions = {
+                    "incident": "Create, read, update, and delete incident records",
+                    "problem": "Manage problem records and root cause analysis",
+                    "change_request": "Handle change management processes",
+                    "user": "Manage user accounts and profiles",
+                    "group": "Handle user groups and assignments"
+                }
+                description = descriptions.get(endpoint, "")
+                response_parts.append(f"\n#### {endpoint.replace('_', ' ').title()}\n- Endpoint: `{path}`\n- Purpose: {description}")
+            else:
+                response_parts.append(f"- {endpoint}: `{path}`")
+        
+        # Add authentication section
+        response_parts.append(f"\n### Authentication\n{data['auth_method']}")
+        
+        # Add example usage section for ServiceNow
+        if "servicenow" in data["base_url"].lower():
+            response_parts.append("""
+### Example Usage
+
+1. **List Incidents**
+```http
+GET /api/now/table/incident
+Authorization: Basic/OAuth
+Content-Type: application/json
+```
+
+2. **Create Incident**
+```http
+POST /api/now/table/incident
+Authorization: Basic/OAuth
+Content-Type: application/json
+
+{
+    "short_description": "Issue description",
+    "urgency": "2",
+    "impact": "2"
+}
+```
+
+3. **Update Incident**
+```http
+PUT /api/now/table/incident/{sys_id}
+Authorization: Basic/OAuth
+Content-Type: application/json
+
+{
+    "state": "2",
+    "work_notes": "Updated status"
+}
+```
+""")
+        
+        # Add documentation link
+        response_parts.append(f"\n### Documentation\nFor detailed information, visit: {data['docs_url']}")
+        
+        return "\n".join(response_parts)
+    
+    elif api_info["source"] == "web_search":
+        data = api_info["data"]["search_results"]
+        response_parts = ["### Search Results"]
+        
+        for result in data.get("RelatedTopics", [])[:5]:
+            if "Text" in result:
+                response_parts.append(f"- {result['Text']}")
+        
+        return "\n".join(response_parts)
+    
+    return "No API information available."
+
+def format_knowledge_response(knowledge_info: Dict) -> str:
+    """Format knowledge query response with improved error handling and formatting"""
+    try:
+        if knowledge_info["status"] != "success":
+            error_msg = knowledge_info.get("error", "Unknown error occurred")
+            logger.error(f"Knowledge query failed: {error_msg}")
+            return f"Sorry, I couldn't find the information you requested. Error: {error_msg}"
+        
+        data = knowledge_info.get("data", {})
+        if not isinstance(data, dict):
+            logger.error(f"Invalid data format in knowledge_info: {type(data)}")
+            return "Sorry, there was an error processing the response data."
+        
+        response_parts = []
+        
+        # Format main answer
+        main_answer = data.get("main_answer", "").strip()
+        if main_answer:
+            # Split into paragraphs and format each one
+            paragraphs = [p.strip() for p in main_answer.split('\n') if p.strip()]
+            
+            # If it's already formatted with headers (###), keep as is
+            if any(p.startswith('#') for p in paragraphs):
+                response_parts.extend(paragraphs)
+            else:
+                # Add main answer header
+                response_parts.append("# Answer\n")
+                
+                # Check if the answer contains numbered points
+                if any(p.startswith(str(i)+'.') for p in paragraphs for i in range(1, 11)):
+                    # Format as a structured list with sections
+                    for paragraph in paragraphs:
+                        # Check if it's a numbered point
+                        if any(paragraph.startswith(str(i)+'.') for i in range(1, 11)):
+                            # Split into title and content
+                            parts = paragraph.split(':', 1)
+                            if len(parts) == 2:
+                                title, content = parts
+                                # Add as a section
+                                response_parts.append(f"## {title.strip()}")
+                                response_parts.append(content.strip())
+                            else:
+                                response_parts.append(paragraph)
+                        else:
+                            response_parts.append(paragraph)
+                else:
+                    # Format paragraphs with proper spacing
+                    for paragraph in paragraphs:
+                        # Check if it's a bullet point
+                        if paragraph.startswith('- ') or paragraph.startswith('* '):
+                            response_parts.append(paragraph)
+                        else:
+                            response_parts.append(f"\n{paragraph}")
+        
+        # Add related information if available
+        related_info = data.get("related_information", [])
+        if related_info and isinstance(related_info, list):
+            # Only add the header if we have actual related information
+            has_valid_info = False
+            formatted_info = []
+            
+            for info in related_info:
+                if info and isinstance(info, str):
+                    info = info.strip()
+                    if info:
+                        has_valid_info = True
+                        # If the info doesn't start with a bullet point, add one
+                        if not info.startswith(('- ', '* ')):
+                            info = f"- {info}"
+                        formatted_info.append(info)
+            
+            if has_valid_info:
+                response_parts.append("\n## Related Information")
+                response_parts.extend(formatted_info)
+        
+        # If no content was added, return a helpful message
+        if not response_parts:
+            return "I apologize, but I couldn't find any relevant information for your query. Please try rephrasing your question or being more specific."
+        
+        # Join with proper spacing
+        response = "\n\n".join(response_parts)
+        
+        # Ensure proper markdown formatting
+        response = response.replace("\n\n\n", "\n\n")  # Remove extra blank lines
+        response = response.strip()  # Remove leading/trailing whitespace
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error formatting knowledge response: {str(e)}", exc_info=True)
+        return "Sorry, there was an error formatting the response. Please try again."
+
+def classify_issue(issue: str) -> Tuple[str, str, str]:
+    """Classify the issue using pattern matching and LLM verification"""
+    try:
+        issue_lower = issue.lower()
+        matched_patterns = {}
+        
+        # First pass: Pattern matching
+        for category, definition in CATEGORY_DEFINITIONS.items():
+            matches = []
+            for pattern_type, patterns in definition["patterns"].items():
+                for pattern in patterns:
+                    import re
+                    if re.search(pattern, issue_lower, re.IGNORECASE):
+                        matches.append((pattern_type, pattern))
+            
+            if matches:
+                matched_patterns[category] = matches
+
+        # If we have clear pattern matches, use them
+        if matched_patterns:
+            # Sort categories by number of matches
+            sorted_categories = sorted(
+                matched_patterns.items(),
+                key=lambda x: len(x[1]),
+                reverse=True
+            )
+            
+            top_category = sorted_categories[0][0]
+            
+            # For needs_resolution and api_query, try to identify the service
+            service = ""
+            if top_category in ["needs_resolution", "api_query"]:
+                for svc, patterns in CATEGORY_DEFINITIONS[top_category]["services"].items():
+                    if any(re.search(p, issue_lower, re.IGNORECASE) for p in patterns):
+                        service = svc
+                        break
+            
+            return top_category, f"Matched patterns: {', '.join(p[0] for p in sorted_categories[0][1])}", service
+
+        # Second pass: LLM classification for complex or ambiguous cases
+        prompt = classifier_template.format(
+            issue=issue,
+            category_definitions=json.dumps(CATEGORY_DEFINITIONS, indent=2)
+        )
+        
+        try:
+            response = llm.invoke(prompt)
+            response_text = response.content if hasattr(response, 'content') else str(response)
+            
+            if not response_text:
+                logger.error("Empty response from classifier LLM")
+                return "uncategorized", "Failed to get response from classifier", ""
+                
+            result = json.loads(response_text)
+            
+            category = result.get("category", "uncategorized")
+            reason = result.get("reason", "No reasoning provided")
+            service = result.get("service", "")
+            confidence = float(result.get("confidence", 0.0))
+            
+            if confidence < 0.7:  # Confidence threshold
+                logger.warning(f"Low confidence classification: {confidence}")
+                
+            if service:
+                service = service.lower()
+            
+            logger.info(f"LLM classified issue as {category} with confidence {confidence}")
+            return category, reason, service
+            
+        except (json.JSONDecodeError, AttributeError) as e:
+            logger.error(f"Failed to parse classifier response: {str(e)}")
+            return "uncategorized", "Failed to parse classifier response", ""
+
+    except Exception as e:
+        logger.error(f"Classification error: {str(e)}", exc_info=True)
+        return "uncategorized", f"Classification failed: {str(e)}", ""
+
+# --- General Query Agent ---
+def get_service_commands(service: str, is_cpu_query: bool = False) -> List[ServerCommand]:
+    """Get relevant commands for a specific service"""
+    commands = []
+    
+    if is_cpu_query:
+        # For CPU queries, use Linux-compatible commands
+        commands.extend([
+            ServerCommand("uptime", timeout=5),
+            ServerCommand("top -b -n1", timeout=5),
+            ServerCommand("free -m", timeout=5),
+            ServerCommand("cat /proc/loadavg", timeout=5)
+        ])
+    else:
+        # Always include basic health checks
+        commands.extend(COMMAND_GROUPS["basic_health"])
+    
+    # Add service-specific commands if available
+    if service.lower() in [s.lower() for s in COMMAND_GROUPS.keys()]:
+        service_key = next(k for k in COMMAND_GROUPS.keys() if k.lower() == service.lower())
+        commands.extend(COMMAND_GROUPS[service_key])
+    
+    return commands
+
+def run_command_safely(cmd: str, timeout: int = 30) -> Tuple[bool, str, int]:
+    """Run a command with timeout and safety checks"""
+    try:
+        # Use universal_newlines=True and specify encoding
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            timeout=timeout,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace'  # Replace invalid characters
+        )
+        return True, result.stdout or result.stderr or "No output", result.returncode
+    except subprocess.TimeoutExpired as e:
+        return False, f"Command timed out after {timeout} seconds", -1
+    except subprocess.CalledProcessError as e:
+        return False, str(e.output or e.stderr or "Unknown error"), e.returncode
+    except UnicodeDecodeError as e:
+        return False, "Error decoding command output (invalid characters)", -1
+    except Exception as e:
+        return False, f"Error executing command: {str(e)}", -1
+
+def run_commands_on_server(ip: str, commands: List[ServerCommand], server_name: str) -> Dict:
+    """Run commands on a remote server with proper error handling"""
+    # Get the current working directory and construct the key path
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    key_path = os.path.join(current_dir, 'Local_infra_setup_script_IaC', '.vagrant', 'machines', server_name, 'virtualbox', 'private_key')
+    
+    if not os.path.exists(key_path):
+        logger.error(f"SSH key not found for {server_name}: {key_path}")
+        return {
+            "status": "error",
+            "error": "Server authentication failed - SSH key not found",
+            "details": {
+                "server": server_name,
+                "ip": ip,
+                "key_path": key_path
+            }
+        }
+
+    results = []
+    # First, test SSH connectivity with proper error handling
+    test_cmd = [
+        "ssh",
+        "-i", key_path,
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=/dev/null",
+        "-o", "ConnectTimeout=5",
+        "-o", "BatchMode=yes",  # Avoid hanging on password prompts
+        "-o", "PreferredAuthentications=publickey",
+        f"vagrant@{ip}",
+        "echo 'SSH connection test'"
+    ]
+    
+    try:
+        success, output, return_code = run_command_safely(" ".join(test_cmd), timeout=10)
+        if not success:
+            logger.error(f"Failed to establish SSH connection to {server_name}: {output}")
+            return {
+                "status": "error",
+                "error": "Failed to establish SSH connection",
+                "details": {
+                    "server": server_name,
+                    "ip": ip,
+                    "output": output
+                }
+            }
+    except Exception as e:
+        logger.error(f"SSH connection test failed for {server_name}: {str(e)}")
+        return {
+            "status": "error",
+            "error": f"SSH connection test failed: {str(e)}",
+            "details": {
+                "server": server_name,
+                "ip": ip
+            }
+        }
+
+    # If SSH test successful, run the actual commands
+    for cmd in commands:
+        # Properly escape and wrap the command for remote execution
+        remote_cmd = cmd.command
+        
+        # For commands that contain shell operations, wrap them properly
+        if any(char in remote_cmd for char in '|><;&'):
+            # Escape any existing single quotes in the command
+            escaped_cmd = remote_cmd.replace("'", "'\\''")
+            # Wrap the entire command in bash -c with proper quoting
+            remote_cmd = f"bash -c '{escaped_cmd}'"
+        
+        ssh_cmd = [
+            "ssh",
+            "-i", key_path,
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "ConnectTimeout=10",
+            "-o", "BatchMode=yes",
+            "-o", "PreferredAuthentications=publickey",
+            f"vagrant@{ip}",
+            f"LC_ALL=C.UTF-8 {remote_cmd}"
+        ]
+        
+        try:
+            success, output, return_code = run_command_safely(" ".join(ssh_cmd), cmd.timeout)
+            
+            # Clean up the output by removing empty lines and Windows-style line endings
+            cleaned_output = "\n".join(line.strip() for line in output.splitlines() if line.strip())
+            
+            results.append({
+                "command": cmd.command,
+                "success": success and (return_code == cmd.expected_return_code),
+                "output": cleaned_output,
+                "return_code": return_code,
+                "timestamp": datetime.datetime.now().isoformat()
+            })
+            
+        except Exception as e:
+            logger.error(f"Error running command on {server_name}: {str(e)}", exc_info=True)
+            results.append({
+                "command": cmd.command,
+                "success": False,
+                "output": f"Error: {str(e)}",
+                "return_code": -1,
+                "timestamp": datetime.datetime.now().isoformat()
+            })
+
+    return {
+        "status": "completed",
+        "commands": results,
+        "server_info": {
+            "name": server_name,
+            "ip": ip
+        }
+    }
+
+def format_service_summary(service_name: str, command_results: List[Dict]) -> str:
+    """Format command outputs into a readable summary"""
+    summary_parts = []
+    
+    # Add service name header
+    summary_parts.append(f"Service: {service_name}")
+    
+    # Process each command result
+    for result in command_results:
+        if not result.get("success"):
+            continue
+            
+        output = result.get("output", "").strip()
+        if not output:
+            continue
+            
+        # Format based on command type
+        if "status" in result["command"]:
+            # Parse systemctl status output
+            status_lines = output.split("\n")
+            service_info = []
+            
+            for line in status_lines:
+                line = line.strip()
+                if "Active:" in line:
+                    service_info.append(f"Status: {line.split('Active:')[1].strip()}")
+                elif "Memory:" in line:
+                    service_info.append(f"Memory Usage: {line.split('Memory:')[1].strip()}")
+                elif "CPU:" in line:
+                    service_info.append(f"CPU Time: {line.split('CPU:')[1].strip()}")
+                elif "Main PID:" in line:
+                    service_info.append(f"Process ID: {line.split('Main PID:')[1].split()[0].strip()}")
+            
+            if service_info:
+                summary_parts.extend(service_info)
+        
+        elif "free" in result["command"]:
+            # Parse memory information
+            mem_lines = output.split("\n")
+            if len(mem_lines) >= 2:
+                headers = mem_lines[0].split()
+                values = mem_lines[1].split()
+                if len(headers) == len(values):
+                    summary_parts.append("Memory Information:")
+                    for i, header in enumerate(headers):
+                        if header.lower() != "mem:":
+                            summary_parts.append(f"  {header}: {values[i]} MB")
+        
+        elif "top" in result["command"]:
+            # Parse top output for CPU and load information
+            top_lines = output.split("\n")
+            for line in top_lines[:5]:  # Only look at header lines
+                if "load average:" in line:
+                    load_avg = line.split("load average:")[1].strip()
+                    summary_parts.append(f"Load Average: {load_avg}")
+                elif "%Cpu(s):" in line:
+                    cpu_stats = line.split("%Cpu(s):")[1].strip()
+                    summary_parts.append(f"CPU Usage: {cpu_stats}")
+        
+        elif "uptime" in result["command"]:
+            # Parse uptime information
+            if "up" in output:
+                uptime_info = output.split(",")[0:2]
+                summary_parts.append(f"Uptime: {', '.join(uptime_info)}")
+        
+        elif "mysql -V" in result["command"]:
+            summary_parts.append(f"MySQL Version: {output}")
+        
+        elif "mysqladmin status" in result["command"]:
+            # Parse mysqladmin status output
+            status_parts = output.split("  ")
+            for part in status_parts:
+                if part.strip():
+                    summary_parts.append(f"MySQL Status: {part.strip()}")
+        
+        elif "extended-status" in result["command"]:
+            # Parse extended MySQL status
+            summary_parts.append("MySQL Statistics:")
+            for line in output.split("\n"):
+                if line.strip():
+                    summary_parts.append(f"  {line.strip()}")
+        
+        elif "mariadb.log" in result["command"] or "mysql/error.log" in result["command"]:
+            # Format error log entries
+            summary_parts.append("\nRecent MySQL Error Log Entries:")
+            log_lines = output.split("\n")
+            error_count = 0
+            for line in log_lines[-10:]:  # Show last 10 error log entries
+                if line.strip():
+                    if error_count < 10:  # Limit to 10 entries
+                        summary_parts.append(f"  {line.strip()}")
+                        error_count += 1
+        
+        elif "slow.log" in result["command"]:
+            # Format slow query log entries
+            summary_parts.append("\nRecent Slow Query Log Entries:")
+            log_lines = output.split("\n")
+            slow_query_count = 0
+            for line in log_lines[-5:]:  # Show last 5 slow query entries
+                if line.strip():
+                    if slow_query_count < 5:  # Limit to 5 entries
+                        summary_parts.append(f"  {line.strip()}")
+                        slow_query_count += 1
+        
+        elif "find" in result["command"] and "mysql" in result["command"]:
+            # Format log file list
+            summary_parts.append("\nMySQL Log Files:")
+            for line in output.split("\n"):
+                if line.strip():
+                    summary_parts.append(f"  {line.strip()}")
+    
+    return "\n".join(summary_parts)
+
+def general_query_handler(user_query: str) -> Dict:
+    """Handle general queries with improved error handling and logging"""
+    try:
+        category, reason, service = classify_issue(user_query)
+        logger.info(f"Query classified as: {category} (service: {service})")
+        
+        # Handle knowledge queries
+        if category == "knowledge_query":
+            logger.info(f"Processing knowledge query: {user_query}")
+            try:
+                knowledge_info = get_knowledge_information(user_query)
+                if knowledge_info.get("status") != "success":
+                    error_msg = knowledge_info.get("error", "Unknown error occurred")
+                    logger.error(f"Knowledge query failed: {error_msg}")
+                    return {
+                        "status": "error",
+                        "type": "knowledge_query",
+                        "error": error_msg
+                    }
+                
+                formatted_response = format_knowledge_response(knowledge_info)
+                if formatted_response.startswith("Sorry,"):
+                    logger.warning(f"Knowledge query returned no useful information: {user_query}")
+                    return {
+                        "status": "error",
+                        "type": "knowledge_query",
+                        "error": "No relevant information found"
+                    }
+                
+                return {
+                    "status": "success",
+                    "type": "knowledge_query",
+                    "response": formatted_response
+                }
+            except Exception as e:
+                logger.error(f"Error processing knowledge query: {str(e)}", exc_info=True)
+                return {
+                    "status": "error",
+                    "type": "knowledge_query",
+                    "error": f"Failed to process knowledge query: {str(e)}"
+                }
+        
+        # Handle API queries
+        if category == "api_query" and service:
+            logger.info(f"Processing API query for service: {service}")
+            try:
+                api_info = get_api_information(service, user_query)
+                return {
+                    "status": "success",
+                    "type": "api_query",
+                    "service": service,
+                    "response": format_api_response(api_info)
+                }
+            except Exception as e:
+                logger.error(f"Error processing API query: {str(e)}", exc_info=True)
+                return {
+                    "status": "error",
+                    "type": "api_query",
+                    "error": f"Failed to process API query: {str(e)}"
+                }
+
+        # Handle resolution needs
+        if category == "needs_resolution":
+            logger.info(f"Processing resolution request: {user_query}")
+            try:
+                resolution_plan = resolve_issue(user_query)
+                if resolution_plan.get("status") != "success":
+                    error_msg = resolution_plan.get("error", "Failed to generate resolution plan")
+                    logger.error(f"Resolution plan generation failed: {error_msg}")
+                    return {
+                        "status": "error",
+                        "type": "resolution",
+                        "error": error_msg
+                    }
+
+                # Validate the resolution plan
+                validation_result = validate_resolution(resolution_plan["plan"])
+                
+                return {
+                    "status": "success",
+                    "type": "resolution",
+                    "resolution": resolution_plan["plan"],
+                    "validation": validation_result
+                }
+            except Exception as e:
+                logger.error(f"Error processing resolution request: {str(e)}", exc_info=True)
+                return {
+                    "status": "error",
+                    "type": "resolution",
+                    "error": f"Failed to process resolution request: {str(e)}"
+                }
+        
+        # Handle infrastructure queries
+        if category == "general_query":
+            logger.info("Processing infrastructure query...")
+            
+            # Check if this is an infrastructure overview request
+            if "overview" in user_query.lower():
+                overview = {
+                    "servers": {},
+                    "total_servers": len(infra_config),
+                    "services_summary": {}
+                }
+                
+                # Collect information about each server
+                for server_name, server_info in infra_config.items():
+                    overview["servers"][server_name] = {
+                        "ip": server_info["ip"],
+                        "os": server_info["os"],
+                        "services": server_info["services"]
+                    }
+                    
+                    # Update services summary
+                    for service in server_info["services"]:
+                        if service not in overview["services_summary"]:
+                            overview["services_summary"][service] = []
+                        overview["services_summary"][service].append(server_name)
+                
+                return {
+                    "status": "success",
+                    "type": "infrastructure_overview",
+                    "overview": overview
+                }
+            
+            # Handle specific server/service queries
+            server_response = infer_servers_from_query(user_query)
+            logger.info(f"Server inference result: {json.dumps(server_response, indent=2)}")
+            
+            # Check if server inference was successful
+            if server_response.get("status") != "success":
+                logger.error(f"Server inference failed: {server_response.get('error', 'Unknown error')}")
+                return {
+                    "status": "error",
+                    "type": "infrastructure_query",
+                    "error": f"Failed to determine target servers: {server_response.get('error', 'Unknown error')}"
+                }
+
+            selected_servers = server_response.get("result", {}).get("selected_servers", [])
+            is_cpu_query = server_response.get("result", {}).get("is_cpu_query", False)
+            logger.info(f"Selected servers: {selected_servers}")
+
+            if not selected_servers:
+                # If no specific servers are selected, try web search for general IT information
+                logger.info("No servers selected, falling back to knowledge query")
+                knowledge_info = get_knowledge_information(user_query)
+                return {
+                    "status": "success",
+                    "type": "knowledge_query",
+                    "response": format_knowledge_response(knowledge_info)
+                }
+
+            results = {}
+            summaries = {}
+            errors = []
+            
+            for server_name in selected_servers:
+                logger.info(f"Processing server: {server_name}")
+                server_info = infra_config.get(server_name)
+                if not server_info:
+                    logger.warning(f"Server {server_name} not found in config")
+                    errors.append(f"Server {server_name} not found in configuration")
+                    continue
+
+                # Get commands based on services running on the server
+                commands = []
+                service_filter = server_response.get("result", {}).get("service_filter")
+                logger.info(f"Service filter: {service_filter}")
+                
+                if service_filter and service_filter.lower() in [s.lower() for s in COMMAND_GROUPS.keys()]:
+                    # Use service-specific commands if available
+                    service_key = next(k for k in COMMAND_GROUPS.keys() if k.lower() == service_filter.lower())
+                    commands.extend(get_service_commands(service_filter, is_cpu_query))
+                    logger.info(f"Using {'CPU-focused' if is_cpu_query else 'service-specific'} commands for {service_filter}")
+                else:
+                    # Use generic commands for all services on the server
+                    for service in server_info["services"]:
+                        commands.extend(get_service_commands(service.lower(), is_cpu_query))
+                    logger.info(f"Using {'CPU-focused' if is_cpu_query else 'generic'} commands for services: {server_info['services']}")
+
+                # Execute commands
+                logger.info(f"Executing {len(commands)} commands on {server_name}")
+                output = run_commands_on_server(
+                    server_info["ip"],
+                    commands,
+                    server_name=server_name
+                )
+
+                if output.get("status") == "error":
+                    error_msg = f"Error on {server_name}: {output.get('error')}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+                    continue
+
+                results[server_name] = {
+                    "ip": server_info["ip"],
+                    "services": server_info["services"],
+                    "commands": output
+                }
+                
+                # Generate summary for this server
+                if output.get("commands"):
+                    service_name = service_filter or ", ".join(server_info["services"])
+                    summaries[server_name] = format_service_summary(service_name, output["commands"])
+                
+                logger.info(f"Successfully executed commands on {server_name}")
+
+            response = {
+                "status": "success" if results else "error",
+                "type": "infrastructure_query",
+                "results": results,
+                "summaries": summaries,
+                "query": user_query
+            }
+
+            if errors:
+                response["errors"] = errors
+                if not results:
+                    response["error"] = "Failed to execute commands on all target servers"
+                logger.warning(f"Query completed with errors: {errors}")
+            else:
+                logger.info("Query completed successfully")
+
+            return response
+
+        # If we get here, we don't know how to handle the category
+        logger.warning(f"Unhandled category: {category}")
+        return {
+            "status": "error",
+            "error": f"Unsupported query category: {category}"
+        }
+
+    except Exception as e:
+        logger.error(f"Error in general query handler: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+# --- Resolution Agent ---
+resolver_template = PromptTemplate.from_template("""You are a skilled Site Reliability Engineer.
+
+Given the reported issue, generate a safe and effective resolution plan.
+Consider potential risks and include necessary validation steps.
+
+Issue:
+{issue}
+
+Infrastructure Configuration:
+{infra_config}
+
+For resource-related issues (CPU, memory, disk), include these types of steps:
+1. Check current resource usage and system stats
+2. Identify processes consuming resources
+3. Analyze historical trends if available
+4. Check service-specific resource limits
+5. Collect relevant logs
+6. Suggest both immediate and long-term fixes
+
+Format your response EXACTLY as follows (do not include any other text):
+{{
+    "service": "tomcat",
+    "server": "app01",
+    "issue_summary": "High memory usage detected on application server",
+    "severity": "high",
+    "resolution_steps": [
+        {{
+            "step": "Check current memory usage details",
+            "purpose": "Get detailed view of memory consumption",
+            "validation": "free -m && ps aux --sort=-%mem | head -n 10",
+            "rollback": null
+        }},
+        {{
+            "step": "Check Tomcat process memory usage",
+            "purpose": "Identify if Tomcat is the main consumer",
+            "validation": "ps -o pid,ppid,%mem,rss,cmd -p $(pgrep -f tomcat)",
+            "rollback": null
+        }},
+        {{
+            "step": "Analyze Tomcat heap usage",
+            "purpose": "Check JVM memory utilization",
+            "validation": "jmap -heap $(pgrep -f tomcat)",
+            "rollback": null
+        }},
+        {{
+            "step": "Check Tomcat memory settings",
+            "purpose": "Verify JVM memory configuration",
+            "validation": "cat /usr/local/tomcat/bin/setenv.sh || cat /usr/local/tomcat/conf/server.xml",
+            "rollback": null
+        }},
+        {{
+            "step": "Review recent Tomcat logs",
+            "purpose": "Look for memory-related errors or warnings",
+            "validation": "tail -n 1000 /usr/local/tomcat/logs/catalina.out | grep -i 'memory\\\\|heap\\\\|OutOfMemory'",
+            "rollback": null
+        }},
+        {{
+            "step": "Check system logs for OOM events",
+            "purpose": "Verify if OOM killer was involved",
+            "validation": "dmesg | grep -i 'killed process\\\\|out of memory'",
+            "rollback": null
+        }}
+    ],
+    "reasoning": "Systematic investigation of memory usage focusing on Tomcat service and system-wide memory consumption",
+    "risks": [
+        "Performance impact during investigation",
+        "Potential service disruption if memory issues persist",
+        "Application stability issues during analysis"
+    ],
+    "prerequisites": [
+        "Access to system logs",
+        "JDK tools installed for heap analysis",
+        "Backup of current Tomcat configuration"
+    ]
+}}""")
+
+def resolve_issue(issue: str) -> Dict:
+    """Generate a resolution plan for an issue"""
+    try:
+        # Prepare the prompt with proper JSON escaping
+        prompt = resolver_template.format(
+            issue=issue,
+            infra_config=json.dumps(infra_config, indent=2)
+        )
+        
+        # Get response from LLM
+        response = llm.invoke(prompt)
+        response_text = response.content if hasattr(response, 'content') else str(response)
+        
+        # Clean up the response text
+        response_text = response_text.strip()
+        if response_text.startswith('```json'):
+            response_text = response_text[7:]
+        if response_text.endswith('```'):
+            response_text = response_text[:-3]
+        response_text = response_text.strip()
+        
+        try:
+            resolution = json.loads(response_text)
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing error: {str(e)}\nResponse text: {response_text}")
+        return {
+                "status": "error",
+                "error": "Invalid resolution plan format"
+            }
+
+        # Validate resolution format
+        required_fields = ["service", "server", "issue_summary", "resolution_steps"]
+        missing_fields = [field for field in required_fields if field not in resolution]
+        
+        if missing_fields:
+            logger.error(f"Resolution plan missing required fields: {missing_fields}")
+            return {
+                "status": "error",
+                "error": f"Invalid resolution plan format. Missing: {missing_fields}"
+            }
+
+        # Validate server exists
+        if resolution["server"] not in infra_config:
+            logger.error(f"Resolution targets non-existent server: {resolution['server']}")
+            return {
+                "status": "error",
+                "error": f"Invalid target server: {resolution['server']}"
+            }
+
+        # Validate service runs on target server
+        server_services = infra_config[resolution["server"]]["services"]
+        if not any(svc.lower() == resolution["service"].lower() for svc in server_services):
+            logger.error(f"Service {resolution['service']} not found on server {resolution['server']}")
+            return {
+                "status": "error",
+                "error": f"Service {resolution['service']} is not configured on {resolution['server']}"
+            }
+
+        # Add metadata
+        resolution["timestamp"] = datetime.datetime.now().isoformat()
+        resolution["id"] = f"RES-{len(str(datetime.datetime.now().timestamp()))}"
+
+        logger.info(f"Generated resolution plan for {resolution['service']} on {resolution['server']}")
+        return {
+            "status": "success",
+            "plan": resolution
+        }
+
+    except Exception as e:
+        logger.error(f"Error generating resolution plan: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "error": f"Failed to generate resolution plan: {str(e)}"
+        }
+
+# --- Validator Agent ---
+validator_template = PromptTemplate.from_template("""You are a cautious Security and Operations Validator.
+
+Review the proposed resolution plan below and assess its safety and effectiveness.
+Consider potential risks, side effects, and whether the steps are appropriate for the issue.
+
+Resolution Plan:
+{resolution_plan}
+
+Infrastructure Context:
+{infra_config}
+
+Respond EXACTLY in this format (do not include any other text or newlines before the JSON):
+{{
+    "approved": true,
+    "reason": "The resolution plan is comprehensive and follows best practices for investigating memory issues",
+    "risks_identified": [
+        "Service disruption during investigation",
+        "Performance impact from diagnostic commands",
+        "Potential data loss if not properly backed up"
+    ],
+    "suggested_modifications": [
+        "Add memory threshold values for monitoring",
+        "Include backup verification step"
+    ],
+    "required_backups": [
+        "Tomcat configuration files",
+        "Application data"
+    ],
+    "confidence": 0.85
+}}""")
+
+def validate_resolution(resolution: Dict) -> Dict:
+    """Validate a proposed resolution plan"""
+    try:
+        prompt = validator_template.format(
+            resolution_plan=json.dumps(resolution, indent=2),
+            infra_config=json.dumps(infra_config, indent=2)
+        )
+        
+        # Get response from LLM
+        response = llm.invoke(prompt)
+        response_text = response.content if hasattr(response, 'content') else str(response)
+        
+        # Clean up the response text
+        response_text = response_text.strip()
+        if response_text.startswith('```json'):
+            response_text = response_text[7:]
+        if response_text.endswith('```'):
+            response_text = response_text[:-3]
+        response_text = response_text.strip()
+        
+        try:
+            validation = json.loads(response_text)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse validation response: {str(e)}\nResponse text: {response_text}")
+        return {
+            "approved": False,
+                "reason": "Failed to parse validation response",
+                "error": str(e)
+            }
+
+        # Add validation metadata
+        validation["timestamp"] = datetime.datetime.now().isoformat()
+        validation["resolution_id"] = resolution.get("id", "unknown")
+
+        logger.info(
+            f"Validation result: {'APPROVED' if validation['approved'] else 'REJECTED'} "
+            f"with confidence {validation.get('confidence', 0.0)}"
+        )
+
+        return validation
+
+    except Exception as e:
+        logger.error(f"Error during validation: {str(e)}", exc_info=True)
+        return {
+            "approved": False,
+            "reason": f"Validation failed: {str(e)}",
+            "error": str(e)
+        }
+
+# --- Executor Agent ---
+class ExecutorAgent:
+    def __init__(self):
+        self.execution_log = []
+        logger.info("ExecutorAgent initialized")
+
+    def execute_remediation(self, execution_data: Dict) -> Dict:
+        """Execute approved remediation steps with safety checks"""
+        try:
+        server_name = execution_data.get("server")
+            steps = execution_data.get("resolution_steps", [])
+            service = execution_data.get("service", "")
+
+            if not server_name or not steps:
+                logger.error("Missing server name or resolution steps")
+                return {
+                    "status": "error",
+                    "error": "Missing server name or resolution steps"
+                }
+
+            server_info = infra_config.get(server_name)
+            if not server_info:
+                logger.error(f"Server {server_name} not found in configuration")
+                return {
+                    "status": "error",
+                    "error": f"Server {server_name} not found in configuration"
+                }
+
+            # Verify service is running on server
+            if service and service.lower() not in [s.lower() for s in server_info["services"]]:
+                logger.error(f"Service {service} not found on server {server_name}")
+                return {
+                    "status": "error",
+                    "error": f"Service {service} is not configured on {server_name}"
+                }
+
+            results = []
+            execution_successful = True
+            
+            for step in steps:
+                step_cmd = step.get("validation", "")  # Use validation command as the actual command
+                if not step_cmd:
+                    logger.warning(f"No validation command for step: {step.get('step', 'Unknown step')}")
+                    continue
+
+                logger.info(f"Executing step: {step.get('step')} on {server_name}")
+                
+                # Execute the validation command
+                cmd_result = self._execute_step(
+                    server_info["ip"],
+                    step_cmd,
+                    server_name,
+                    timeout=300  # 5 minutes max per step
+                )
+
+                step_result = {
+                    "step": step.get("step", ""),
+                    "command": step_cmd,
+                    "result": cmd_result,
+                    "timestamp": datetime.datetime.now().isoformat()
+                }
+
+                # If step failed and has rollback, execute rollback
+                if not cmd_result.get("success") and step.get("rollback"):
+                    logger.warning(f"Step failed, executing rollback: {step.get('rollback')}")
+                    rollback_result = self._execute_step(
+                        server_info["ip"],
+                        step["rollback"],
+                        server_name,
+                        timeout=300
+                    )
+                    step_result["rollback_result"] = rollback_result
+                    execution_successful = False
+
+                results.append(step_result)
+
+            # Log the execution
+            execution_record = {
+                "server": server_name,
+                "service": service,
+                "timestamp": datetime.datetime.now().isoformat(),
+                "results": results,
+                "successful": execution_successful
+            }
+            self.execution_log.append(execution_record)
+
+            return {
+                "status": "completed",
+                "successful": execution_successful,
+                "execution": execution_record
+            }
+
+        except Exception as e:
+            logger.error(f"Error during remediation execution: {str(e)}", exc_info=True)
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
+    def _execute_step(self, ip: str, command: str, server_name: str, timeout: int = 300) -> Dict:
+        """Execute a single command step"""
+        try:
+            # Get the current working directory and construct the key path
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            key_path = os.path.join(current_dir, 'Local_infra_setup_script_IaC', '.vagrant', 'machines', server_name, 'virtualbox', 'private_key')
+
+        if not os.path.exists(key_path):
+                logger.error(f"SSH key not found: {key_path}")
+                return {
+                    "success": False,
+                    "error": f"SSH key not found: {key_path}"
+                }
+
+            # Properly escape and wrap the command for remote execution
+            remote_cmd = command
+            
+            # For commands that contain shell operations, wrap them properly
+            if any(char in remote_cmd for char in '|><;&'):
+                # Escape any existing single quotes in the command
+                escaped_cmd = remote_cmd.replace("'", "'\\''")
+                # Wrap the entire command in bash -c with proper quoting
+                remote_cmd = f"bash -c '{escaped_cmd}'"
+
+        ssh_cmd = [
+            "ssh",
+            "-i", key_path,
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null",
+                "-o", "ConnectTimeout=10",
+                "-o", "BatchMode=yes",
+                "-o", "PreferredAuthentications=publickey",
+            f"vagrant@{ip}",
+                f"LC_ALL=C.UTF-8 {remote_cmd}"
+            ]
+
+            logger.info(f"Executing command on {server_name}: {command}")
+            success, output, return_code = run_command_safely(" ".join(ssh_cmd), timeout)
+            
+            result = {
+                "success": success,
+                "output": output,
+                "return_code": return_code,
+                "command": command
+            }
+            
+            if not success:
+                logger.error(f"Command failed on {server_name}: {output}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error executing step on {server_name}: {str(e)}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+                "command": command
+            }
+
+    def get_execution_log(self) -> List[Dict]:
+        """Get the execution history"""
+        return self.execution_log
+
+def infer_servers_from_query(query: str) -> Dict:
+    """Infer which servers to query based on the user's input"""
+    try:
+        if not infra_config:
+            raise ValueError("Infrastructure configuration is not available")
+
+        # Check for CPU usage specific keywords
+        is_cpu_query = any(keyword in query.lower() for keyword in [
+            'cpu', 'processor', 'load', 'usage', 'performance', 'utilization'
+        ])
+        
+        # Extract service name from query
+        services = {
+            "mysql": ["mysql", "mariadb", "database", "db"],
+            "nginx": ["nginx", "web server", "http"],
+            "tomcat": ["tomcat", "java", "webapp"],
+            "memcache": ["memcache", "cache"],
+            "rabbitmq": ["rabbitmq", "queue", "amqp"]
+        }
+        
+        query_lower = query.lower()
+        service_filter = None
+        
+        # Check for service names and their aliases
+        for service, keywords in services.items():
+            if any(keyword in query_lower for keyword in keywords):
+                service_filter = service
+                break
+
+        # Extract server name from query
+        server_filter = next((server for server in infra_config.keys() 
+                            if server.lower() in query_lower), None)
+
+        selected_servers = []
+
+        # If specific server mentioned, use it
+        if server_filter:
+            selected_servers.append(server_filter)
+        # If no server found but service mentioned, find servers running that service
+        elif service_filter:
+            for server, info in infra_config.items():
+                services_lower = [svc.lower() for svc in info["services"]]
+                if service_filter == "mysql" and ("mysql" in services_lower or "mariadb" in services_lower):
+                    selected_servers.append(server)
+                elif service_filter.lower() in services_lower:
+                    selected_servers.append(server)
+        # If still no servers selected, check for resource queries
+        elif is_cpu_query:
+            # For CPU queries without specific server, check all servers
+            selected_servers = list(infra_config.keys())
+
+        if not selected_servers:
+            return {
+                "status": "error",
+                "error": "Could not determine which servers to query. Please specify a server or service."
+            }
+
+        return {
+            "status": "success",
+            "result": {
+                "selected_servers": selected_servers,
+                "reasoning": f"Selected servers running {service_filter}" if service_filter 
+                           else "Selected specifically mentioned servers" if server_filter
+                           else "Checking all servers for resource usage",
+                "service_filter": service_filter,
+                "is_cpu_query": is_cpu_query
+            }
+        }
+
+        except Exception as e:
+        logger.error(f"Error inferring servers: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "error": str(e)
+        }

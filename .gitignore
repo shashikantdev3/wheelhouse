@@ -36,7 +36,40 @@ provisioning/*.pem
 provisioning/*.key
 provisioning/*.crt
 
+# Ignore Python related files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+ENV/
+
+# Ignore all log files
+*.log
+logs/
+
 # Ignore sensitive configuration files
+# Infrastructure configuration with credentials
+config/infra.yaml
+infra_config.json
+config/rbac.yaml
+config/commands.yaml
 config/*.yml
 config/*.json
 config/*.env
@@ -44,7 +77,25 @@ config/*.pem
 config/*.key
 config/*.crt
 
-# Ignore sensitive SSH keys
+# Credentials, keys, and tokens
 *.pem
 *.key
 *.pub
+*.env
+.env
+.env.*
+credentials.json
+*_credentials.json
+token.json
+*_token.json
+
+# Ticket data
+tickets/
+tickets/*.json
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
