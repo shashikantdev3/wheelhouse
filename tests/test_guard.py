@@ -109,6 +109,15 @@ REFUSED = [
     ["systemctl", "stop", "getty@tty1"],
     ["systemctl", "restart", "chronyd.service"],
     "df -h",
+    # Sprint 1: real-host hardening.
+    ["mysql", "--batch", "-e", "SELECT 1"],
+    ["mysql", "--defaults-file=/home/x/.my.cnf", "-e", "SELECT 1"],
+    ["mysql", "--batch", "--defaults-file=/etc/wheelhouse/mysql-readonly.cnf", "-e", "SELECT 1"],
+    ["mysqladmin", "status"],
+    ["psql", "-c", "SELECT 1"],
+    ["sudo", "systemctl", "restart", "nginx"],
+    ["sudo", "-n", "-u", "postgres", "psql", "-X", "-c", "SELECT 1"],
+    ["sudo", "-n", "--user=mysql", "uptime"],
 ]
 
 ALLOWED = [
@@ -117,9 +126,20 @@ ALLOWED = [
     ["systemctl", "restart", "nginx"],
     ["journalctl", "--no-pager", "-u", "nginx", "-n", "100"],
     ["rabbitmqctl", "list_queues", "-p", "/", "name", "messages"],
-    ["mysql", "--batch", "--database", "app", "--execute", "SELECT COUNT(*) FROM orders"],
-    ["mysqladmin", "status"],
-    ["sudo", "-u", "postgres", "psql", "-c", "SELECT 1"],
+    ["sudo", "-n", "rabbitmqctl", "list_queues", "-p", "/", "name", "messages"],
+    ["sudo", "-n", "systemctl", "restart", "nginx"],
+    [
+        "mysql",
+        "--defaults-file=/etc/wheelhouse/mysql-readonly.cnf",
+        "--batch",
+        "--database",
+        "app",
+        "--execute",
+        "SELECT COUNT(*) FROM orders",
+    ],
+    ["mysql", "--no-defaults", "-e", "SELECT 1"],
+    ["mysqladmin", "--defaults-file=/etc/wheelhouse/mysql-readonly.cnf", "status"],
+    ["sudo", "-n", "-u", "root", "psql", "-X", "-c", "SELECT 1"],
     ["ping", "-c", "4", "web01"],
 ]
 

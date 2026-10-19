@@ -1,0 +1,62 @@
+# Wheelhouse lab: five hosts running real systemd, reachable over SSH on localhost.
+# Run `python lab/setup_lab.py` once first; it creates keys and the inventory.
+# Linux, macOS and Windows (Docker Desktop) are supported; systemd needs privileged mode.
+
+x-host: &host
+  privileged: true
+  cgroup: host
+  tmpfs: [/run, /run/lock, /tmp]
+  networks: [lab]
+  restart: unless-stopped
+
+services:
+  base:
+    image: wheelhouse-lab-base
+    build: ./images/base
+    entrypoint: ["true"]
+    restart: "no"
+    profiles: [build]
+
+  web01:
+    <<: *host
+    build: ./images/web
+    hostname: web01
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - ./.secrets/hosts/web01:/lab-secrets:ro
+    ports: ["127.0.0.1:2211:22", "127.0.0.1:8081:80"]
+  app01:
+    <<: *host
+    build: ./images/app
+    hostname: app01
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - ./.secrets/hosts/app01:/lab-secrets:ro
+    ports: ["127.0.0.1:2212:22"]
+  db01:
+    <<: *host
+    build: ./images/db
+    hostname: db01
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - ./.secrets/hosts/db01:/lab-secrets:ro
+    ports: ["127.0.0.1:2213:22"]
+  mq01:
+    <<: *host
+    build: ./images/mq
+    hostname: mq01
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - ./.secrets/hosts/mq01:/lab-secrets:ro
+    ports: ["127.0.0.1:2214:22"]
+  etl01:
+    <<: *host
+    build: ./images/etl
+    hostname: etl01
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - ./.secrets/hosts/etl01:/lab-secrets:ro
+    ports: ["127.0.0.1:2215:22"]
+
+networks:
+  lab: {}

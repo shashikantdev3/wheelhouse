@@ -8,10 +8,12 @@ never change the shape of the command.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import shlex
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from typing import Any
 
 from wheelhouse.safety.sql import read_only_sql_reason
 from wheelhouse.safety.tiers import Tier
@@ -36,10 +38,14 @@ class Param:
     max_length: int = 255
 
     def problem(self, value: object) -> str | None:
-        if not isinstance(value, str):
+        if type(value) is not str:  # exactly str: a subclass could render differently
             return "must be text"
         if not value:
             return "must not be empty"
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            return "is not valid text"
         if len(value) > min(self.max_length, MAX_ARG_LENGTH):
             return "too long"
         if value.startswith("-"):
@@ -130,6 +136,26 @@ class Catalog:
     def __len__(self) -> int:
         return len(self._specs)
 
+    def policy_hash(self) -> str:
+        """SHA-256 over the catalog's content: names, tiers, commands, parameter rules and
+        timeouts. Recorded with every decision, so a record shows which catalog was in
+        force."""
+        import rfc8785
+
+        body: Any = [
+            {
+                "name": s.name,
+                "tier": s.tier.value,
+                "argv": list(s.argv),
+                "params": {
+                    k: [p.description, p.pattern or "", p.max_length] for k, p in s.params.items()
+                },
+                "timeout_s": s.timeout_s,
+            }
+            for s in sorted(self._specs.values(), key=lambda x: x.name)
+        ]
+        return "sha256:" + hashlib.sha256(rfc8785.dumps(body)).hexdigest()
+
     def specs(self) -> list[ActionSpec]:
         return sorted(self._specs.values(), key=lambda s: (s.tier, s.name))
 
@@ -198,25 +224,46 @@ def default_catalog() -> Catalog:
                 "mysql_query",
                 look,
                 "Run one read-only MySQL statement",
-                ("mysql", "--batch", "--database", "{database}", "--execute", "{sql}"),
+                (
+                    "mysql",
+                    "--defaults-file=/etc/wheelhouse/mysql-readonly.cnf",
+                    "--batch",
+                    "--database",
+                    "{database}",
+                    "--execute",
+                    "{sql}",
+                ),
                 {"database": DATABASE, "sql": READ_ONLY_MYSQL},
                 timeout_s=60,
             ),
             ActionSpec(
-                "mysql_status", look, "MySQL server status counters", ("mysqladmin", "status")
+                "mysql_status",
+                look,
+                "MySQL server status counters",
+                ("mysqladmin", "--defaults-file=/etc/wheelhouse/mysql-readonly.cnf", "status"),
             ),
             ActionSpec(
                 "rabbitmq_queues",
                 look,
                 "Queues with message and consumer counts",
-                ("rabbitmqctl", "list_queues", "-p", "{vhost}", "name", "messages", "consumers"),
+                (
+                    "sudo",
+                    "-n",
+                    "rabbitmqctl",
+                    "list_queues",
+                    "-p",
+                    "{vhost}",
+                    "name",
+                    "messages",
+                    "consumers",
+                ),
                 {"vhost": QUEUE_VHOST},
             ),
             ActionSpec(
                 "service_restart",
                 touch,
                 "Restart a systemd service",
-                ("systemctl", "restart", "{service}"),
+                ("sudo", "-n", "systemctl", "restart", "{service}"),
                 {"service": SERVICE},
                 timeout_s=120,
                 rollback_note="Restart is idempotent. If the service does not come "
@@ -227,7 +274,7 @@ def default_catalog() -> Catalog:
                 "service_start",
                 touch,
                 "Start a stopped systemd service",
-                ("systemctl", "start", "{service}"),
+                ("sudo", "-n", "systemctl", "start", "{service}"),
                 {"service": SERVICE},
                 timeout_s=120,
                 rollback_note="Roll back with service_stop on the same service.",
@@ -236,7 +283,7 @@ def default_catalog() -> Catalog:
                 "service_stop",
                 touch,
                 "Stop a systemd service",
-                ("systemctl", "stop", "{service}"),
+                ("sudo", "-n", "systemctl", "stop", "{service}"),
                 {"service": SERVICE},
                 timeout_s=120,
                 rollback_note="Roll back with service_start on the same service.",

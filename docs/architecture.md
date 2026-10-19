@@ -29,20 +29,24 @@
 - **Postgres for state, DuckDB for analytics, JSONL ledger on disk.** Runs on one VM with Docker Compose; a Helm chart comes later.
 - **Web console in Python (FastAPI, Jinja, HTMX).** No separate JavaScript application to maintain.
 
-## Folder layout (target)
+## Folder layout
 
 ```
 src/wheelhouse/
-  config.py          settings from environment and .env
-  safety/            Lockkeeper: tiers, catalog, guards, approvals   (Sprint 0)
-  ledger/            Purser: ProvenKit AIDR records, hash chain      (Sprint 1)
-  providers/         model providers and decision models             (Sprint 1)
-  connectors/        MCP servers: linux, mysql, rabbitmq, ...        (Sprint 1+)
-  watch/             Lookout, Barometer, Diver, Navigator, Helmsman, Bosun
-  move/              Surveyor, Cartographer, Shipwright
-  keel/              Quartermaster, Master-at-Arms, trace ingest
-  assay/             Assayer: claim checks, parity, evaluations
-  console/           web console
-lab/                 Docker Compose lab and drills (faults with known root causes)
+  config.py          settings from environment and .env                      (built)
+  safety/            Lockkeeper: tiers, catalog, guard, SQL check, approvals  (built)
+  ledger/            Purser: ProvenKit AIDR records, hash chain, verify       (built)
+  runtime/           inventory, SSH transport, runner                         (built)
+  providers/         Anthropic, OpenRouter, Ollama with usage and cost        (built)
+  mcp_server.py      MCP server: look actions and change requests             (built)
+  cli.py             doctor, catalog, check, hosts, run, request, approve, ledger, mcp
+  watch/             Lookout, Barometer, Diver, Navigator, Helmsman, Bosun    (Sprint 2+)
+  move/              Surveyor, Cartographer, Shipwright                       (Sprint 8+)
+  keel/              Quartermaster, Master-at-Arms, trace ingest              (Sprint 6+)
+  assay/             Assayer: claim checks, parity, evaluations               (Sprint 2+)
+  console/           web console                                              (Sprint 2+)
+lab/                 Docker lab (five systemd hosts) and, later, drills
 docs/                vision, crew, safety model, roadmap, decisions
 ```
+
+One MCP server covers all connected hosts today; per-system connectors (Windows, Airflow, Databricks, Fabric) are added as catalog entries and connectors in later sprints.

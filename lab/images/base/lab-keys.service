@@ -1,0 +1,13 @@
+[Unit]
+Description=Install lab keys and sudo rules from the mounted secrets folder
+Before=ssh.service
+DefaultDependencies=no
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/lab-keys
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

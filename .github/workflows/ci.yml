@@ -21,8 +21,29 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python }}
-      - run: uv sync --locked
+      - run: uv sync --locked --all-extras
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy
       - run: uv run pytest -q
+
+  lab:
+    # Builds the five-host Docker lab and runs the end-to-end tests over real SSH.
+    # Marked continue-on-error until it has passed on GitHub's runners at least once
+    # (systemd-in-Docker depends on the runner's cgroup setup).
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - run: uv sync --locked --all-extras
+      - run: python lab/setup_lab.py
+      - run: docker compose -f lab/docker-compose.yml --profile build build base
+      - run: docker compose -f lab/docker-compose.yml up -d --build
+      - run: sleep 30 && uv run wheelhouse --inventory lab/wheelhouse.lab.yaml hosts
+      - run: WHEELHOUSE_LAB=1 uv run pytest tests/lab -v
+      - if: always()
+        run: docker compose -f lab/docker-compose.yml down

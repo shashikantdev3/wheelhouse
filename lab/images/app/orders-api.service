@@ -1,0 +1,11 @@
+[Unit]
+Description=Orders API (lab application)
+After=network.target
+
+[Service]
+User=orders
+ExecStart=/usr/bin/python3 /opt/orders/orders_api.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+#!/bin/sh
+# Copies this host's own keys and sudo rules from /lab-secrets (a bind mount, whose
+# permissions may be loose on Windows) into place with the owners and modes sshd and
+# sudo expect.
+set -eu
+install -o root -g root -m 0600 /lab-secrets/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key
+install -o root -g root -m 0644 /lab-secrets/ssh_host_ed25519_key.pub /etc/ssh/ssh_host_ed25519_key.pub
+install -d -o wheelhouse -g wheelhouse -m 0700 /home/wheelhouse/.ssh
+install -o wheelhouse -g wheelhouse -m 0600 /lab-secrets/authorized_keys /home/wheelhouse/.ssh/authorized_keys
+install -o root -g root -m 0440 /lab-secrets/sudoers /etc/sudoers.d/wheelhouse
+visudo -cf /etc/sudoers.d/wheelhouse

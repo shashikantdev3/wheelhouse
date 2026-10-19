@@ -5,21 +5,33 @@ description = "A self-hosted crew of AI agents that migrates a data estate, then
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Shashikant" }]
+license = "BUSL-1.1"
+license-files = ["LICENSE"]
 dependencies = [
   "pydantic>=2.8",
   "pydantic-settings>=2.4",
   "sqlglot>=30.23,<31",  # pinned: the read-only check depends on parser behaviour
   "rfc8785>=0.1.4",
+  "filelock>=4.2.4",
+  "pyyaml>=6.0.3",
+  "httpx>=0.28.1",
 ]
 
 [project.scripts]
 wheelhouse = "wheelhouse.cli:main"
+
+[project.optional-dependencies]
+mcp = [
+    "mcp>=2.3,<3",
+]
 
 [dependency-groups]
 dev = [
   "pytest>=8",
   "ruff>=0.6",
   "mypy>=1.11",
+  "jsonschema>=4.26.0",
+  "types-pyyaml>=6.0.12.20260906",
 ]
 
 [build-system]

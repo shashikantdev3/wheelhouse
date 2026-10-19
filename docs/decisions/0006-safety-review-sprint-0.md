@@ -20,7 +20,11 @@ An independent reviewer tried to break the first version of the safety core. It 
 
 A fresh reviewer re-tested the changes (verdict: pass, no blockers). Fixed in the same commit: the guard now reports whether a command changes state, and Lockkeeper refuses a state-changing command that the catalog labels Look; malformed requests and approvals are refused cleanly instead of raising; the guard and the gate turn any unexpected error into a refusal; a guard index error on repeated statement flags; more protected units (user and getty sessions, firewalls, time sync); nested sudo is refused.
 
-## Still open (before anything executes on a real host)
+## Status of the open items (updated in Sprint 1, see decision 0007)
+
+Done in Sprint 1: SSH transport uses remote_command only; nonces in the ledger; enforced timeouts and rate limits; server-side SQL time limit in the lab; sudo users pinned; `--defaults-file` / `--no-defaults` and `-X` required; POSIX shell check; read-only account without credential tables (lab). Verified in the lab: the mariadb client does run `\!` shell commands inside `--execute` (`SELECT 3 \! id` ran `id`), so refusing every backslash is necessary, not just cautious.
+
+Original list
 
 - The SSH transport must use `remote_command()` only, and is reviewed again when built (Sprint 1).
 - Used nonces move from memory to the ledger (Sprint 1).

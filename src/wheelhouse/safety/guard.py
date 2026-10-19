@@ -290,8 +290,33 @@ _MYSQL_OPTS = Options(
 )
 
 
+# MySQL clients must not read option files from the remote account (a planted ~/.my.cnf
+# could change behaviour). They must start with --no-defaults or one of these files,
+# which the deployment owns and keeps read-only.
+ALLOWED_MYSQL_DEFAULTS_FILES: frozenset[str] = frozenset({"/etc/wheelhouse/mysql-readonly.cnf"})
+
+
+def _mysql_defaults_problem(args: Sequence[str]) -> tuple[Sequence[str], str | None]:
+    """mysql and mysqladmin read --defaults-file only as the first option."""
+    if not args:
+        return args, "a MySQL client must start with --no-defaults or --defaults-file"
+    first = args[0]
+    if first == "--no-defaults":
+        return args[1:], None
+    name, eq, value = first.partition("=")
+    if name == "--defaults-file" and eq and value in ALLOWED_MYSQL_DEFAULTS_FILES:
+        return args[1:], None
+    return args, "a MySQL client must start with --no-defaults or an approved --defaults-file"
+
+
 def _sql_client(dialect: str, statement_flags: tuple[str, ...], opts: Options) -> Rule:
     def rule(args: Sequence[str]) -> str | None:
+        if dialect == "mysql":
+            args, defaults_problem = _mysql_defaults_problem(args)
+            if defaults_problem:
+                return defaults_problem
+        elif "-X" not in args and "--no-psqlrc" not in args:
+            return "psql must run with -X so a planted ~/.psqlrc is not read"
         problem = opts.check(args)[1]
         if problem:
             return problem
@@ -347,6 +372,9 @@ _MYSQLADMIN_READ = frozenset({"status", "extended-status", "version", "ping", "v
 
 
 def _mysqladmin(args: Sequence[str]) -> str | None:
+    args, defaults_problem = _mysql_defaults_problem(args)
+    if defaults_problem:
+        return defaults_problem
     opts = Options(
         valued={
             "--host": _HOST,
@@ -415,9 +443,17 @@ PROGRAM_RULES: dict[str, Rule] = {
 }
 
 
-def _strip_wrappers(argv: Sequence[str]) -> tuple[list[str], str | None]:
-    """Unwrap 'sudo -n -u USER', 'timeout DURATION' and 'nice -n N'. Any other use of a
-    wrapper, or any other wrapper, is refused."""
+# Users sudo may switch to. Without -u, sudo runs as root. Deployments narrow this further
+# with sudoers rules on each host, which remain the real boundary there.
+DEFAULT_SUDO_USERS: frozenset[str] = frozenset({"root"})
+
+
+def _strip_wrappers(
+    argv: Sequence[str], sudo_users: frozenset[str] = DEFAULT_SUDO_USERS
+) -> tuple[list[str], str | None]:
+    """Unwrap 'sudo -n [-u USER]', 'timeout DURATION' and 'nice -n N'. Any other use of a
+    wrapper, or any other wrapper, is refused. sudo must be non-interactive (-n) and may
+    only switch to a user in sudo_users."""
     rest = list(argv)
     seen_sudo = False
     while rest:
@@ -427,16 +463,27 @@ def _strip_wrappers(argv: Sequence[str]) -> tuple[list[str], str | None]:
                 return [], "nested sudo is not allowed"
             seen_sudo = True
             rest = rest[1:]
+            target = "root"
+            non_interactive = False
             while rest and rest[0].startswith("-"):
                 tok = rest[0]
-                if tok in {"-n", "--non-interactive", "-H"}:
+                if tok in {"-n", "--non-interactive"}:
+                    non_interactive = True
+                    rest = rest[1:]
+                elif tok == "-H":
                     rest = rest[1:]
                 elif tok in {"-u", "--user"} and len(rest) > 1 and _DB.fullmatch(rest[1]):
+                    target = rest[1]
                     rest = rest[2:]
                 elif tok.startswith("--user=") and _DB.fullmatch(tok.split("=", 1)[1]):
+                    target = tok.split("=", 1)[1]
                     rest = rest[1:]
                 else:
                     return [], f"sudo option '{tok}' is not allowed"
+            if not non_interactive:
+                return [], "sudo must be non-interactive (-n)"
+            if target not in sudo_users:
+                return [], f"sudo to user '{target}' is not allowed"
         elif prog == "timeout":
             if len(rest) < 2 or not _DURATION.fullmatch(rest[1]):
                 return [], "timeout must be followed by a plain duration"
@@ -450,11 +497,11 @@ def _strip_wrappers(argv: Sequence[str]) -> tuple[list[str], str | None]:
     return rest, None
 
 
-def changes_state(argv: Sequence[str]) -> bool:
+def changes_state(argv: Sequence[str], sudo_users: frozenset[str] = DEFAULT_SUDO_USERS) -> bool:
     """True if the guard knows this command changes state. Lockkeeper refuses such a
     command when the catalog labels it Look, so a mis-tiered catalog entry cannot run
     without approval. Unknown commands are refused by destructive_reason anyway."""
-    rest, reason = _strip_wrappers(argv)
+    rest, reason = _strip_wrappers(argv, sudo_users)
     if reason or not rest:
         return True
     prog = program_name(rest[0])
@@ -463,17 +510,19 @@ def changes_state(argv: Sequence[str]) -> bool:
     return False
 
 
-def destructive_reason(argv: Sequence[str]) -> str | None:
+def destructive_reason(
+    argv: Sequence[str], sudo_users: frozenset[str] = DEFAULT_SUDO_USERS
+) -> str | None:
     """Return why this argument list may not run, or None if the guard's own allowlist
     accepts it. None does not mean 'allowed': the catalog and the tier still decide.
     Any unexpected error is a refusal, never a pass."""
     try:
-        return _destructive_reason(argv)
+        return _destructive_reason(argv, sudo_users)
     except Exception as err:  # noqa: BLE001 - the guard must fail closed
         return f"guard could not check this command ({type(err).__name__})"
 
 
-def _destructive_reason(argv: Sequence[str]) -> str | None:
+def _destructive_reason(argv: Sequence[str], sudo_users: frozenset[str]) -> str | None:
     if not isinstance(argv, (list, tuple)) or not argv:
         return "empty command"
     for tok in argv:
@@ -482,7 +531,9 @@ def _destructive_reason(argv: Sequence[str]) -> str | None:
         if _BAD_CHARS.search(tok):
             return "control character in an argument"
 
-    rest, reason = _strip_wrappers(argv)
+    if not isinstance(sudo_users, frozenset):
+        return "sudo users must be a frozenset"
+    rest, reason = _strip_wrappers(argv, sudo_users)
     if reason:
         return reason
     if not rest:

@@ -5,20 +5,20 @@ with the guard (a second allowlist), and returns RUN, NEEDS_APPROVAL or REFUSED.
 never runs anything itself.
 
 Single use: when a Touch step is cleared to run, its approval's nonce is recorded and
-cannot clear another run. In Sprint 0 this record lives in memory; Sprint 1 moves it
-into the ledger so it survives restarts.
+cannot clear another run. Callers pass the nonces already recorded in the ledger
+(used_nonces) so single use survives restarts.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from wheelhouse.safety.approvals import Approval, ApprovalAuthority, step_hash
 from wheelhouse.safety.catalog import Catalog, CatalogError, RenderedAction, default_catalog
-from wheelhouse.safety.guard import changes_state, destructive_reason
+from wheelhouse.safety.guard import DEFAULT_SUDO_USERS, changes_state, destructive_reason
 from wheelhouse.safety.tiers import Tier, Verdict
 
 _HOST = re.compile(r"[A-Za-z0-9][A-Za-z0-9.\-]{0,252}")
@@ -33,6 +33,8 @@ class Decision:
     action: str
     argv: tuple[str, ...] = ()
     step_hash: str | None = None
+    rendered: RenderedAction | None = None
+    """The exact action that was checked. Executors must run this, never a re-render."""
 
     @property
     def may_run(self) -> bool:
@@ -41,11 +43,20 @@ class Decision:
 
 class Lockkeeper:
     def __init__(
-        self, catalog: Catalog | None = None, authority: ApprovalAuthority | None = None
+        self,
+        catalog: Catalog | None = None,
+        authority: ApprovalAuthority | None = None,
+        sudo_users: frozenset[str] = DEFAULT_SUDO_USERS,
+        used_nonces: Iterable[str] = (),
     ) -> None:
         self.catalog = catalog if catalog is not None else default_catalog()
         self.authority = authority
-        self._used_nonces: set[str] = set()
+        self.sudo_users = sudo_users
+        self._used_nonces: set[str] = set(used_nonces)
+
+    def refresh_used_nonces(self, nonces: Iterable[str]) -> None:
+        """Add nonces recorded elsewhere (for example by another process)."""
+        self._used_nonces.update(nonces)
 
     def decide(
         self,
@@ -73,9 +84,19 @@ class Lockkeeper:
             return Decision(Verdict.REFUSED, Tier.NEVER, "invalid host name", str(host), action)
 
         try:
-            rendered = self.catalog.render(action, args or {})
+            # One snapshot of the arguments: what is checked is what is rendered and run.
+            snapshot = dict(args) if args else {}
+            rendered = self.catalog.render(action, snapshot)
         except CatalogError as err:
             return Decision(Verdict.REFUSED, Tier.NEVER, f"not in the catalog: {err}", host, action)
+        except Exception as err:  # noqa: BLE001 - odd argument objects must not crash the gate
+            return Decision(
+                Verdict.REFUSED,
+                Tier.NEVER,
+                f"arguments could not be read ({type(err).__name__})",
+                host,
+                action,
+            )
 
         try:
             return self._gate(host, rendered, approval, now)
@@ -91,7 +112,7 @@ class Lockkeeper:
     def _gate(
         self, host: str, rendered: RenderedAction, approval: Approval | None, now: datetime
     ) -> Decision:
-        danger = destructive_reason(rendered.argv)
+        danger = destructive_reason(rendered.argv, self.sudo_users)
         if danger:
             return Decision(
                 Verdict.REFUSED, Tier.NEVER, f"guard: {danger}", host, rendered.name, rendered.argv
@@ -99,7 +120,7 @@ class Lockkeeper:
 
         digest = step_hash(host, rendered)
 
-        if rendered.tier is Tier.LOOK and changes_state(rendered.argv):
+        if rendered.tier is Tier.LOOK and changes_state(rendered.argv, self.sudo_users):
             return Decision(
                 Verdict.REFUSED,
                 Tier.NEVER,
@@ -118,6 +139,7 @@ class Lockkeeper:
                 rendered.name,
                 rendered.argv,
                 digest,
+                rendered,
             )
 
         if rendered.tier is Tier.TOUCH:
@@ -131,6 +153,7 @@ class Lockkeeper:
                     rendered.name,
                     rendered.argv,
                     digest,
+                    rendered,
                 )
 
             if approval is None:
@@ -151,6 +174,7 @@ class Lockkeeper:
                 rendered.name,
                 rendered.argv,
                 digest,
+                rendered,
             )
 
         return Decision(

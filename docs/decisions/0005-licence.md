@@ -1,6 +1,6 @@
 # 0005. Licence
 
-- Status: Proposed (decision pending with the author)
+- Status: Accepted (2026-10-19)
 - Date: 2026-10-19
 
 ## Context
@@ -19,6 +19,6 @@ Goal: learners and individuals use Wheelhouse for free; companies that run it in
 
 Business Source License 1.1, with an Additional Use Grant for educational and non-commercial production use, and a commercial licence for companies. Call it "source-available", not "open source". Outside contributions need a contributor licence agreement.
 
-## Open
+## Decision
 
-The author confirms the licence before the first push of the rebuilt code.
+Business Source License 1.1. Additional Use Grant: production use by individuals for personal, learning or non-commercial purposes, by schools and universities for teaching or research, and by registered non-profits for their own non-commercial work. Companies and service providers running it in production need a commercial licence. Change Date: four years after each version is published. Change License: Apache-2.0. Outside contributions need the CLA (draft, lawyer review pending). See LICENSING.md.

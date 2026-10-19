@@ -1,0 +1,7 @@
+[Unit]
+Description=Lab ETL: daily orders summary
+
+[Service]
+Type=oneshot
+User=etl
+ExecStart=/opt/etl/orders_daily.sh

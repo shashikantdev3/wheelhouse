@@ -1,0 +1,333 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/shashikantdev3/provenkit/main/spec/v0.1/evidence-record.schema.json",
+  "title": "AI Decision Record (AIDR)",
+  "description": "A tamper-evident record of a single control decision made about an AI system interaction. See spec/v0.1/SPEC.md.",
+  "type": "object",
+  "required": ["aidr_version", "decision_id", "ts", "outcome", "origin", "control", "temporal", "integrity"],
+  "additionalProperties": false,
+  "properties": {
+    "aidr_version": {
+      "type": "string",
+      "const": "0.1",
+      "description": "Specification version this record conforms to."
+    },
+    "decision_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "description": "UUID uniquely identifying this decision. MUST be unique within a chain."
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp of the decision, with millisecond precision or finer, in UTC."
+    },
+    "stage": {
+      "type": "string",
+      "enum": ["input", "retrieval", "tool_call", "generation", "output", "memory_write"],
+      "description": "Point in the request lifecycle at which this decision was taken."
+    },
+    "outcome": {
+      "type": "object",
+      "required": ["action"],
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["allow", "redact", "transform", "deny", "require_approval", "escalate"],
+          "description": "The enforced action. 'allow' MUST still be recorded: absence of a record is not evidence of absence of risk."
+        },
+        "reason_code": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Machine-readable reason, typically the identifier of the rule that determined the action."
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["info", "low", "medium", "high", "critical"]
+        },
+        "approval": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "required_role": { "type": "string" },
+            "granted_by": { "type": "string", "description": "Pseudonymous identifier of the approver." },
+            "granted_at": { "type": "string", "format": "date-time" }
+          }
+        }
+      }
+    },
+    "origin": {
+      "type": "object",
+      "description": "PILLAR 1. Who or what initiated this request.",
+      "required": ["principal"],
+      "additionalProperties": false,
+      "properties": {
+        "principal": {
+          "type": "object",
+          "required": ["type", "id"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string", "enum": ["human", "agent", "service", "scheduled", "unknown"] },
+            "id": { "type": "string", "description": "Pseudonymous, stable identifier. Implementations MUST NOT place a raw email address or other direct identifier here." },
+            "id_scheme": { "type": "string", "description": "How id was derived, e.g. 'hmac-sha256:tenant-salt'." },
+            "tenant_id": { "type": "string" },
+            "roles": { "type": "array", "items": { "type": "string" }, "maxItems": 64 }
+          }
+        },
+        "agent": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string" },
+            "name": { "type": "string" },
+            "version": { "type": "string" },
+            "delegation_chain": {
+              "type": "array",
+              "items": { "type": "string" },
+              "maxItems": 32,
+              "description": "Ordered principals from the human originator to the acting agent. Addresses OWASP ASI03 identity and privilege abuse."
+            }
+          }
+        },
+        "session_id": { "type": "string" },
+        "channel": { "type": "string", "description": "Interface the request arrived on, e.g. 'teams', 'web', 'api', 'mcp'." },
+        "source_ip_class": {
+          "type": "string",
+          "enum": ["internal", "external", "vpn", "unknown"],
+          "description": "Classification only. Raw IP addresses MUST NOT be recorded."
+        }
+      }
+    },
+    "lineage": {
+      "type": "object",
+      "description": "PILLAR 2. What data was accessed and whether access was authorised.",
+      "additionalProperties": false,
+      "properties": {
+        "inputs": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "required": ["kind", "content_hash"],
+            "additionalProperties": false,
+            "properties": {
+              "kind": { "type": "string", "enum": ["prompt", "system_prompt", "chunk", "tool_result", "memory", "file", "image"] },
+              "content_hash": { "$ref": "#/$defs/hash" },
+              "byte_length": { "type": "integer", "minimum": 0 },
+              "source_uri": { "type": "string", "description": "Stable identifier of the source. Implementations MAY hash this where the URI itself is sensitive." },
+              "document_id": { "type": "string" },
+              "document_version": { "type": "string" },
+              "classification": { "type": "string", "description": "Sensitivity label in force on the source at the time of access." },
+              "acl_checked": { "type": "boolean", "description": "Whether an entitlement check was performed before this input was admitted." },
+              "acl_authorised": { "type": "boolean", "description": "Result of that check. A record with acl_checked true and acl_authorised false alongside outcome.action 'allow' is a finding." },
+              "retrieval_score": { "type": "number" },
+              "rank": { "type": "integer", "minimum": 1 }
+            }
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "required": ["kind", "content_hash"],
+            "additionalProperties": false,
+            "properties": {
+              "kind": { "type": "string", "enum": ["completion", "tool_arguments", "structured", "citation_set"] },
+              "content_hash": { "$ref": "#/$defs/hash" },
+              "byte_length": { "type": "integer", "minimum": 0 },
+              "redactions": { "type": "integer", "minimum": 0, "description": "Count of spans removed or masked before release." }
+            }
+          }
+        },
+        "tool": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "server": { "type": "string", "description": "For MCP, the server identity. Addresses OWASP MCP09 shadow servers." },
+            "server_fingerprint": { "$ref": "#/$defs/hash" },
+            "scopes_requested": { "type": "array", "items": { "type": "string" }, "maxItems": 64 },
+            "scopes_granted": { "type": "array", "items": { "type": "string" }, "maxItems": 64 },
+            "side_effect": { "type": "string", "enum": ["none", "read", "write", "irreversible"] }
+          }
+        }
+      }
+    },
+    "control": {
+      "type": "object",
+      "description": "PILLAR 3. Which policies and safeguards were in force at the instant of the decision.",
+      "required": ["policy_id", "policy_version", "policy_hash", "enforcement_point"],
+      "additionalProperties": false,
+      "properties": {
+        "policy_id": { "type": "string" },
+        "policy_version": { "type": "string", "description": "Semantic version of the policy document." },
+        "policy_hash": { "$ref": "#/$defs/hash" },
+        "enforcement_point": {
+          "type": "object",
+          "required": ["type", "id", "version"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string", "enum": ["local_middleware", "gateway", "bedrock_guardrails", "azure_content_safety", "model_armor", "mcp_gateway", "acs_hook", "custom"] },
+            "id": { "type": "string" },
+            "version": { "type": "string", "description": "Version of the enforcing component. Required so that a block decision can be reproduced. Detector opacity is an audit finding." }
+          }
+        },
+        "rules_evaluated": { "type": "array", "items": { "type": "string" }, "maxItems": 512 },
+        "rules_fired": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "required": ["rule_id", "action"],
+            "additionalProperties": false,
+            "properties": {
+              "rule_id": { "type": "string" },
+              "action": { "type": "string", "enum": ["allow", "redact", "transform", "deny", "require_approval", "escalate"] },
+              "detector": { "type": "string", "description": "Component that produced the signal, e.g. 'regex:pii-v3', 'classifier:promptguard2'." },
+              "detector_version": { "type": "string" },
+              "score": { "type": "number", "minimum": 0, "maximum": 1 },
+              "threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+              "latency_ms": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "coverage": {
+          "type": "object",
+          "description": "Honest declaration of what the enforcement point could not evaluate. A control that was not evaluated MUST NOT be reported as passed.",
+          "additionalProperties": false,
+          "properties": {
+            "not_evaluated": { "type": "array", "items": { "type": "string" }, "maxItems": 256 },
+            "degraded": { "type": "boolean", "description": "True when the enforcement point was operating in a reduced mode, for example because a detector timed out." },
+            "fail_mode": { "type": "string", "enum": ["closed", "open"], "description": "Behaviour applied when a detector was unavailable. 'open' with action 'allow' is a finding." }
+          }
+        },
+        "total_latency_ms": { "type": "number", "minimum": 0 }
+      }
+    },
+    "temporal": {
+      "type": "object",
+      "description": "PILLAR 4. The exact configuration active at the moment of the decision.",
+      "required": ["model"],
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "object",
+          "required": ["provider", "name"],
+          "additionalProperties": false,
+          "properties": {
+            "provider": { "type": "string" },
+            "name": { "type": "string" },
+            "version": { "type": "string", "description": "Pinned version. A floating alias SHOULD be resolved to a concrete version before recording." },
+            "deployment": { "type": "string", "description": "Deployment identity, which for some providers determines processing region." },
+            "region": { "type": "string" },
+            "params": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "temperature": { "type": "number" },
+                "top_p": { "type": "number" },
+                "max_tokens": { "type": "integer" },
+                "seed": { "type": "integer" }
+              }
+            }
+          }
+        },
+        "prompt": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "template_id": { "type": "string" },
+            "template_version": { "type": "string" },
+            "template_hash": { "$ref": "#/$defs/hash" }
+          }
+        },
+        "index": {
+          "type": "object",
+          "description": "State of the retrieval index. Without this, a wrong answer cannot be distinguished from a stale one.",
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string" },
+            "version": { "type": "string" },
+            "snapshot_at": { "type": "string", "format": "date-time" },
+            "embedding_model": { "type": "string" }
+          }
+        },
+        "code_version": { "type": "string", "description": "Commit or build identifier of the calling application." }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "description": "Optional. Present so that control state and spend can be answered from one record.",
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens": { "type": "integer", "minimum": 0 },
+        "cached_input_tokens": { "type": "integer", "minimum": 0 },
+        "reasoning_tokens": { "type": "integer", "minimum": 0 },
+        "guardrail_units": { "type": "number", "minimum": 0, "description": "Units consumed by the enforcement point itself, in the unit the provider bills." },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "amount": { "type": "number", "minimum": 0 },
+        "amount_source": { "type": "string", "enum": ["reported", "computed", "estimated"] },
+        "attempt": { "type": "integer", "minimum": 1, "description": "Attempt number. Retries are a first class cost, not an invisible one." }
+      }
+    },
+    "outcome_link": {
+      "type": "object",
+      "description": "Optional. Joins this decision to a downstream business result. A claimed outcome is a claim until verified; see verified_at and verification_method.",
+      "additionalProperties": false,
+      "properties": {
+        "correlation_id": { "type": "string" },
+        "label": { "type": "string" },
+        "claimed_at": { "type": "string", "format": "date-time" },
+        "verified_at": { "type": "string", "format": "date-time" },
+        "verification_method": { "type": "string", "enum": ["none", "self_reported", "downstream_system", "human_confirmed", "no_recontact_window"] },
+        "reversed_at": { "type": "string", "format": "date-time", "description": "Set when a previously claimed outcome was later contradicted, for example by a re-contact." }
+      }
+    },
+    "otel": {
+      "type": "object",
+      "description": "Optional join keys to existing telemetry. Presence allows an evidence chain to be aligned with traces without duplicating them.",
+      "additionalProperties": false,
+      "properties": {
+        "trace_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "span_id": { "type": "string", "pattern": "^[0-9a-f]{16}$" }
+      }
+    },
+    "labels": {
+      "type": "object",
+      "description": "Deployment-defined dimensions for allocation, for example team, application, environment.",
+      "additionalProperties": { "type": "string", "maxLength": 256 },
+      "maxProperties": 32
+    },
+    "integrity": {
+      "type": "object",
+      "description": "Chain and signature material. See SPEC.md section 6.",
+      "required": ["seq", "prev_hash", "record_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "chain_id": { "type": "string" },
+        "seq": { "type": "integer", "minimum": 0, "description": "Zero-based position in the chain." },
+        "prev_hash": { "$ref": "#/$defs/hash", "description": "record_hash of the preceding record. For seq 0 this is the genesis value, 64 zero characters prefixed with the algorithm." },
+        "record_hash": { "$ref": "#/$defs/hash", "description": "Hash over the canonical serialisation of this record with integrity.record_hash and integrity.signature omitted." },
+        "signature": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "alg": { "type": "string", "enum": ["ed25519", "ecdsa-p256-sha256"] },
+            "key_id": { "type": "string" },
+            "value": { "type": "string", "contentEncoding": "base64" }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Lowercase hex SHA-256, prefixed with the algorithm."
+    }
+  }
+}

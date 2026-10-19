@@ -1,109 +1,21 @@
-# Ignore Vagrant machine metadata and sensitive files
-.vagrant/
-.vagrant/machines/
-.vagrant/machines/*/virtualbox/private_key
-.vagrant/machines/*/virtualbox/authorized_keys
-.vagrant/machines/*/virtualbox/id_rsa
-.vagrant/machines/*/virtualbox/id_rsa.pub
-.vagrant/machines/*/virtualbox/ssh_config
-.vagrant/machines/*/virtualbox/ssh_host_*
-.vagrant/machines/*/virtualbox/ssh_known_hosts
-
-# Ignore SSH configuration files
-.vagrant/ssh_config
-.vagrant/authorized_keys
-.vagrant/id_rsa
-.vagrant/id_rsa.pub
-
-# Ignore insecure default private key
-.vagrant.d/insecure_private_key
-
-# Ignore Vagrant logs and temporary files
-.vagrant.d/*.log
-.vagrant.d/*.pid
-.vagrant.d/*.bak
-.vagrant.d/*.swp
-
-# Ignore Vagrant box files
-.vagrant.d/boxes/
-
-# Ignore sensitive provisioning files
-provisioning/*.sh
-provisioning/*.yml
-provisioning/*.json
-provisioning/*.env
-provisioning/*.pem
-provisioning/*.key
-provisioning/*.crt
-
-# Ignore Python related files
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-*.egg-info/
-.installed.cfg
-*.egg
-venv/
-ENV/
-
-# Ignore all log files
-*.log
-logs/
-
-# Ignore sensitive configuration files
-# Infrastructure configuration with credentials
-config/infra.yaml
-infra_config.json
-config/rbac.yaml
-config/commands.yaml
-config/*.yml
-config/*.json
-config/*.env
-config/*.pem
-config/*.key
-config/*.crt
-
-# Credentials, keys, and tokens
-*.pem
-*.key
-*.pub
-*.env
+# Secrets and local state: never commit
 .env
 .env.*
-credentials.json
-*_credentials.json
-token.json
-*_token.json
+/approvals/
+/ledger/
+*.jsonl
+/wheelhouse.yaml
+lab/.secrets/
+lab/wheelhouse.lab.yaml
+*.lock
+!uv.lock
 
-# Ticket data
-tickets/
-tickets/*.json
-
-# IDE and editor files
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# Wheelhouse
+# Python and tools
 .venv/
+__pycache__/
+*.pyc
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
-ledger/
-*.jsonl
+dist/
+build/

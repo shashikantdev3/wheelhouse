@@ -1,0 +1,5 @@
+# Owned by root, read-only for everyone. Wheelhouse's SQL actions must use this file
+# (the guard refuses any other defaults file). No password: the account uses the
+# local socket and the OS user name.
+[client]
+user=wheelhouse

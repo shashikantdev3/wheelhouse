@@ -1,0 +1,12 @@
+[Unit]
+Description=Seed the lab database
+After=mariadb.service
+Requires=mariadb.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'mariadb < /opt/lab/seed.sql'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

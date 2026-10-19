@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the lab ETL every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+
+[Install]
+WantedBy=timers.target
