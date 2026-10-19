@@ -43,4 +43,6 @@ Stop it with `docker compose -f lab/docker-compose.yml down`.
 
 ## Lab only
 
-The containers run privileged so systemd can work. The ETL password and all keys are for this lab and must never be reused. The original five-VM Vagrant lab from v1 is kept in `lab/vagrant/` for anyone who prefers full virtual machines; its passwords are the public Vagrant defaults.
+The containers run privileged so systemd can work. Keys and the ETL job's database password are generated on your machine by `setup_lab.py` into `lab/.secrets/` (git-ignored); the repository holds no passwords. Never reuse any of them outside the lab.
+
+The original five-VM Vagrant lab from v1 was removed from the main branch because its scripts contained the public tutorial's default passwords. It is still available in the `v1-poc` tag.

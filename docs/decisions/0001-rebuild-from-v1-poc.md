@@ -14,3 +14,7 @@ Rebuild from scratch under the name Wheelhouse. Keep the history and the tag `v1
 ## Consequences
 
 Nothing from the old code is reused directly. The old README claims (RBAC, Celery, FastAPI) are dropped; the new README states only what exists.
+
+## Update (19 Oct 2026)
+
+The Vagrant scripts were removed from the main branch after GitGuardian flagged the hard-coded tutorial default passwords in them (`REMOVED`, `test`). They were never real credentials, but the repository should hold none. The scripts remain in the `v1-poc` tag. The lab's own ETL password is now generated per machine by `lab/setup_lab.py`. The commit history is not rewritten: the values were public tutorial defaults, already in the 2025 history, and rewriting would break the tag and existing clones.

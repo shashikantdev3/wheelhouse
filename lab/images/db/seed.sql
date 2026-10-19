@@ -17,9 +17,4 @@ CREATE USER IF NOT EXISTS 'wheelhouse'@'localhost' IDENTIFIED VIA unix_socket;
 GRANT SELECT, SHOW VIEW ON app.* TO 'wheelhouse'@'localhost';
 -- Server-side limit: any statement from this account stops after 30 seconds.
 ALTER USER 'wheelhouse'@'localhost' WITH MAX_STATEMENT_TIME 30;
--- The ETL job's account (writes the daily summary). Lab only: its password is in this
--- root-only file and in etl01's root:etl 0640 config.
-CREATE USER IF NOT EXISTS 'etl'@'%' IDENTIFIED BY 'REMOVED';
-GRANT SELECT ON app.orders TO 'etl'@'%';
-GRANT INSERT, UPDATE, DELETE ON app.orders_daily TO 'etl'@'%';
 FLUSH PRIVILEGES;
