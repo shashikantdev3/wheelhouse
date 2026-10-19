@@ -1,121 +1,73 @@
-# Autonomous IT Support Agent
+# Wheelhouse
 
-A robust, extensible, and secure AI-powered IT support platform for infrastructure monitoring, troubleshooting, and automation.
+**A self-hosted crew of AI agents that migrates a data estate, then runs it, and proves every action it took.**
 
-## Features
-- Modular plugin architecture for services and commands
-- Secure command execution (whitelisting, RBAC, audit logging)
-- Automated and interactive troubleshooting
-- API documentation and integration knowledge base
-- Real-time health dashboard and alerting
-- Asynchronous, scalable job execution
-- LLM-powered remediation and knowledge queries
+> **Status: Sprint 0 (October 2026).** What exists today is the safety core (Lockkeeper), the action catalog and a command line. The agents, lab and console are being built in the open, sprint by sprint. See the [roadmap](docs/roadmap.md). This README only describes what exists or is clearly marked as planned.
 
-## Project Structure
-- `core/` - Core logic (command execution, security, logging)
-- `plugins/` - Service and command plugins
-- `api/` - REST API endpoints
-- `ui/` - Frontend dashboard
-- `config/` - Infrastructure, RBAC, and command configs
+## Why
 
-## Setup
-1. Clone the repo
-2. Install requirements: `pip install -r requirements.txt`
-3. Configure infrastructure and RBAC in `config/`
-4. Run the backend: `python api/main.py`
-5. Open the dashboard in your browser
+IT service companies and data consultancies run "managed services" for their clients. Migration tools stop at cutover, operations tools start blind, prevented incidents earn no credit, and AI is entering production with no cost control or audit trail. Wheelhouse puts one crew on all of it, inside the client's own network. The full case, including what already exists in the market, is in [docs/vision.md](docs/vision.md).
 
-## Extending
-- Add new services/commands as plugins in `plugins/`
-- Update RBAC and command templates in `config/`
+## Three modules (planned)
 
-## Security
-- All actions are logged
-- Only whitelisted commands can be executed
-- Role-based access control for sensitive actions
+| Module | What it does | Crew |
+|---|---|---|
+| **Watch** | Managed services agent: L1 watch, investigation, remediation plans, and forecasts that warn before things break | Lookout, Barometer, Diver, Navigator, Helmsman, Bosun |
+| **Move** | Migration factory: legacy ETL and warehouse to a governed lakehouse, with lineage and parity proof | Surveyor, Cartographer, Shipwright |
+| **Keel** | AI control built in: observability, evaluations, token FinOps, guardrails and AI security | Quartermaster, Master-at-Arms |
+| Shared | Safety gate, verification, tamper-evident records | Lockkeeper, Assayer, Purser |
 
-## Technical Stack
+Every agent's job and limits: [docs/crew.md](docs/crew.md).
 
-### Backend
-- Python 3.x
-- Flask web framework
-- Langchain for LLM integration
-- Ollama/Mistral for local LLM processing
-- DuckDuckGo API for web searches
+## The rules
 
-### Frontend
-- Bootstrap 5
-- Font Awesome icons
-- Showdown.js for Markdown rendering
-- Modern JavaScript (ES6+)
+- Read-only, allowlisted actions run on their own. Every change runs only after a named human approves that exact step.
+- No agent can delete, purge, drop, truncate or format anything. This is enforced in code by two independent allowlists (the catalog and the guard); no approval can unlock it.
+- Agents never write shell commands. They request typed actions; Lockkeeper decides.
+- Text from logs, tickets and documents is data, never instructions.
 
-### Infrastructure
-- Vagrant for VM management
-- Infrastructure as Code (IaC)
-- SSH-based remote command execution
-- JSON-based configuration
+How this is enforced, and its honest limits: [docs/safety-model.md](docs/safety-model.md).
 
-## Usage
+## Try the safety core
 
-### 1. Infrastructure Queries
-```
-"Show me the status of nginx on web01"
-"What's the CPU usage on app01?"
-"Check MySQL logs on db01"
+Requires [uv](https://docs.astral.sh/uv/).
+
+```bash
+uv sync
+uv run wheelhouse doctor                       # which model keys are configured (never shows values)
+uv run wheelhouse catalog                      # the actions agents may request, with their tier
+uv run wheelhouse check web01 service_status service=nginx      # verdict: run (Look)
+uv run wheelhouse check web01 service_restart service=nginx     # verdict: needs_approval (Touch)
+uv run wheelhouse check web01 service_status "service=nginx;reboot"   # verdict: refused
+uv run pytest
 ```
 
-### 2. Knowledge Queries
-```
-"What is the difference between Docker and Kubernetes?"
-"Explain how load balancing works"
-"Best practices for database backup"
-```
+`check` is a dry run: it shows Lockkeeper's verdict and never executes anything.
 
-### 3. API Queries
-```
-"Show me ServiceNow API endpoints"
-"How to integrate with Ansible Tower API"
-"Documentation for RabbitMQ REST API"
-```
+## Configuration
 
-### 4. Problem Resolution
+Copy your keys into a `.env` file in the project folder (it is git-ignored):
+
 ```
-"Nginx is returning 502 errors"
-"MySQL keeps crashing on db01"
-"High memory usage on app01"
+ANTHROPIC_API_KEY=...
+OPENROUTER_API_KEY=...
+WHEELHOUSE_APPROVAL_KEY=...   # signs approvals; generate with: python -c "import secrets; print(secrets.token_hex(32))"
+# OLLAMA_BASE_URL=http://localhost:11434   optional, for a local model
 ```
 
-## Architecture
+## Project history
 
-```mermaid
-graph TB
-    UI[Web Interface] --> Orchestrator
-    Orchestrator --> Classifier[Classifier Agent]
-    Orchestrator --> General[General Query Agent]
-    Orchestrator --> Resolver[Resolver Agent]
-    Orchestrator --> Validator[Validator Agent]
-    Orchestrator --> Executor[Executor Agent]
-    
-    General --> LLM[Local LLM]
-    General --> WebSearch[Web Search]
-    General --> Infrastructure[Infrastructure]
-    
-    subgraph Infrastructure
-        Nginx[Web01 - Nginx]
-        Tomcat[App01 - Tomcat]
-        MySQL[DB01 - MySQL]
-        Memcache[MC01 - Memcache]
-        RabbitMQ[RMQ01 - RabbitMQ]
-    end
-```
+This repository started in May 2025 as the *Autonomous IT Support Agent* proof of concept, kept under the tag [`v1-poc`](../../tree/v1-poc). Wheelhouse is a rebuild; why is recorded in [decision 0001](docs/decisions/0001-rebuild-from-v1-poc.md).
 
-## License
+## Related projects
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+- [twosystems](https://github.com/shashikantdev3/twosystems): decision models decide, LLMs think when unsure, humans sign off when both are unsure.
+- [ProvenKit](https://github.com/shashikantdev3/provenkit): the AI Decision Record format used for Wheelhouse's ledger.
 
-## Acknowledgments
+## Licence
 
-- Langchain for LLM integration
-- Ollama/Mistral for local LLM capabilities
-- DuckDuckGo for web search functionality
-- Bootstrap team for the UI framework
+Being finalised; see [decision 0005](docs/decisions/0005-licence.md). Until then, no licence is granted for the rebuilt code beyond viewing it on GitHub.
+
+## Author
+
+Created by **Shashikant**.

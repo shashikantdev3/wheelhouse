@@ -99,3 +99,11 @@ tickets/*.json
 *.swp
 *.swo
 *~
+
+# Wheelhouse
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+ledger/
+*.jsonl
