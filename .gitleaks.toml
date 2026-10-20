@@ -1,0 +1,9 @@
+# Gitleaks configuration: the default rules, plus an allowlist for obviously fake values
+# used in tests. Never allowlist a real secret; rotate it instead.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake values in tests"
+paths = ['''^tests/''']
+regexes = ['''sk-ant-secret-value-123''']

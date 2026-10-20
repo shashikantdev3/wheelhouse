@@ -14,13 +14,15 @@ from wheelhouse.ledger import (
     decision_record,
     execution_record,
 )
-from wheelhouse.safety import ApprovalAuthority, Lockkeeper
+from wheelhouse.safety import Lockkeeper
+
+from tests.keys import LEDGER_KEY, SHASHIKANT, authority
 
 SCHEMA = json.loads(
     (Path(__file__).parents[1] / "src/wheelhouse/ledger/aidr-0.1.schema.json").read_text()
 )
 NOW = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
-KEY = b"k" * 32
+KEY = LEDGER_KEY
 
 
 def validate(record: dict) -> None:
@@ -36,7 +38,7 @@ def test_canonical_form_drops_nulls_and_empties_and_sorts() -> None:
 
 
 def test_records_chain_verify_and_match_the_schema(tmp_path: Path) -> None:
-    k = Lockkeeper(authority=ApprovalAuthority(KEY))
+    k = Lockkeeper(authority=authority())
     ledger = Ledger(tmp_path / "ledger.jsonl")
     policy = k.catalog.policy_hash()
     d1 = k.decide("web01", "disk_usage", now=NOW)
@@ -44,7 +46,7 @@ def test_records_chain_verify_and_match_the_schema(tmp_path: Path) -> None:
     d2 = k.decide("web01", "service_restart", {"service": "nginx"}, now=NOW)
     r2 = ledger.append(decision_record(d2, policy_hash=policy, principal="cli", key=KEY))
     assert d2.step_hash
-    appr = k.authority.grant(d2.step_hash, "shashikant", now=NOW)  # type: ignore[union-attr]
+    appr = SHASHIKANT.grant(d2.step_hash, now=NOW)
     d3 = k.decide("web01", "service_restart", {"service": "nginx"}, appr, now=NOW)
     r3 = ledger.append(
         decision_record(d3, policy_hash=policy, principal="cli", key=KEY, approval=appr)
@@ -115,12 +117,12 @@ def test_record_hash_ignores_signature_and_own_hash() -> None:
 
 
 def test_single_use_survives_restart(tmp_path: Path) -> None:
-    auth = ApprovalAuthority(KEY)
+    auth = authority()
     ledger = Ledger(tmp_path / "ledger.jsonl")
     k1 = Lockkeeper(authority=auth)
     first = k1.decide("web01", "service_restart", {"service": "nginx"}, now=NOW)
     assert first.step_hash
-    appr = auth.grant(first.step_hash, "shashikant", now=NOW)
+    appr = SHASHIKANT.grant(first.step_hash, now=NOW)
     ran = k1.decide("web01", "service_restart", {"service": "nginx"}, appr, now=NOW)
     ledger.append(
         decision_record(ran, policy_hash="sha256:" + "0" * 64, principal="cli", approval=appr)

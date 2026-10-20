@@ -26,26 +26,26 @@
 - **Model providers behind one interface.** Anthropic, OpenRouter (including decision models such as Microsoft-Decision-1), Azure AI Foundry and Ollama. The client chooses; nothing is hard-wired.
 - **Statistics for forecasting.** Barometer uses trend and seasonal baselines. LLMs explain; they do not forecast.
 - **OpenTelemetry GenAI conventions for Keel.** Wheelhouse emits `gen_ai.*` spans for its own agents and accepts them from client AI apps over OTLP. These conventions were still marked "Development" in mid-2026, so Keel maps attributes through one adapter that can change in one place.
-- **Postgres for state, DuckDB for analytics, JSONL ledger on disk.** Runs on one VM with Docker Compose; a Helm chart comes later.
-- **Web console in Python (FastAPI, Jinja, HTMX).** No separate JavaScript application to maintain.
+- **State on disk first.** Today incidents are JSON files with a file lock and the ledger is a JSONL file. Postgres for state and DuckDB for analytics come with multi-client support; a Helm chart comes later.
+- **Web console in Python, server-rendered, no JavaScript.** Sprint 2's approval console uses the standard library only (decision 0008); it can move to FastAPI when dashboards arrive.
 
 ## Folder layout
 
 ```
 src/wheelhouse/
   config.py          settings from environment and .env                      (built)
-  safety/            Lockkeeper: tiers, catalog, guard, SQL check, approvals  (built)
+  safety/            Lockkeeper: tiers, catalog, guard, SQL check, Ed25519 approvals (built)
   ledger/            Purser: ProvenKit AIDR records, hash chain, verify       (built)
-  runtime/           inventory, SSH transport, runner                         (built)
+  runtime/           inventory, SSH transport, runner, replay of recordings  (built)
   providers/         Anthropic, OpenRouter, Ollama with usage and cost        (built)
+  crew/              incidents, Lookout, Diver, Assayer, Navigator, Helmsman, watch loop (built)
+  console.py         approval console (local web page)                        (built)
   mcp_server.py      MCP server: look actions and change requests             (built)
-  cli.py             doctor, catalog, check, hosts, run, request, approve, ledger, mcp
-  watch/             Lookout, Barometer, Diver, Navigator, Helmsman, Bosun    (Sprint 2+)
+  cli.py             doctor, catalog, check, hosts, run, request, approve, keys,
+                     watch, incidents, console, ledger, mcp
   move/              Surveyor, Cartographer, Shipwright                       (Sprint 8+)
   keel/              Quartermaster, Master-at-Arms, trace ingest              (Sprint 6+)
-  assay/             Assayer: claim checks, parity, evaluations               (Sprint 2+)
-  console/           web console                                              (Sprint 2+)
-lab/                 Docker lab (five systemd hosts) and, later, drills
+lab/                 Docker lab (five systemd hosts), drill recorder and recordings
 docs/                vision, crew, safety model, roadmap, decisions
 ```
 

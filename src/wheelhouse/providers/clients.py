@@ -25,7 +25,10 @@ def _post(url: str, headers: dict[str, str], body: dict[str, Any], who: str) -> 
         raise ProviderError(f"{who}: request failed ({type(err).__name__})") from None
     if resp.status_code >= 400:
         raise ProviderError(f"{who}: HTTP {resp.status_code}")
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError:
+        raise ProviderError(f"{who}: response is not JSON") from None
     if not isinstance(data, dict):
         raise ProviderError(f"{who}: unexpected response")
     return data
@@ -167,6 +170,26 @@ class OllamaProvider:
             ),
             int((time.monotonic() - start) * 1000),
         )
+
+
+DEFAULT_ANTHROPIC_MODEL = "claude-haiku-5-5"
+
+
+def choose_provider(
+    settings: Settings,
+) -> AnthropicProvider | OpenRouterProvider | OllamaProvider | None:
+    """The crew's model. WHEELHOUSE_MODEL picks it; otherwise Claude Haiku when an
+    Anthropic key is set. OpenRouter and Ollama need WHEELHOUSE_MODEL to say which model."""
+    model = settings.wheelhouse_model
+    if settings.anthropic_api_key and (model is None or model.startswith("claude-")):
+        return AnthropicProvider(
+            settings.anthropic_api_key.get_secret_value(), model or DEFAULT_ANTHROPIC_MODEL
+        )
+    if settings.openrouter_api_key and model:
+        return OpenRouterProvider(settings.openrouter_api_key.get_secret_value(), model)
+    if settings.ollama_base_url and model:
+        return OllamaProvider(settings.ollama_base_url, model)
+    return None
 
 
 def live_check(settings: Settings) -> list[str]:

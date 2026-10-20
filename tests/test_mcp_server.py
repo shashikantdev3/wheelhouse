@@ -5,8 +5,9 @@ import pytest
 
 pytest.importorskip("mcp")
 
-from tests.test_runner import make  # noqa: E402
 from wheelhouse.mcp_server import build_server  # noqa: E402
+
+from tests.test_runner import make  # noqa: E402
 
 
 def call(server, name: str, args: dict) -> str:  # type: ignore[no-untyped-def]

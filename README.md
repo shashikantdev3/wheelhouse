@@ -2,7 +2,7 @@
 
 **A self-hosted crew of AI agents that migrates a data estate, then runs it, and proves every action it took.**
 
-> **Status: Sprint 1 of 11 (October 2026).** What exists today: the safety gate (Lockkeeper), a tamper-evident ledger in the ProvenKit format, an SSH runner with human approvals, model providers, an MCP server, and a five-host lab with real systemd. The agents and the console come next. See the [roadmap](docs/roadmap.md). This README only describes what exists or is clearly marked as planned.
+> **Status: Sprint 2 of 11 (October 2026).** What exists today: the reactive crew (Lookout, Diver, Assayer, Navigator, Helmsman) working one incident end to end in a five-host lab with real systemd; the safety gate (Lockkeeper); Ed25519 approvals from a local approval console; a tamper-evident ledger in the ProvenKit format; model providers; an MCP server; recorded drills. Next: a scored set of 20 to 30 drills. See the [roadmap](docs/roadmap.md). This README only describes what exists or is clearly marked as planned.
 
 ## Why
 
@@ -40,16 +40,38 @@ uv run wheelhouse check web01 service_restart service=nginx       # dry run: nee
 uv run wheelhouse check web01 service_status "service=nginx;reboot" # dry run: refused
 ```
 
-With the [lab](lab/README.md) running:
+### One incident, end to end (lab)
+
+With the [lab](lab/README.md) running, in two terminals:
 
 ```bash
 I="--inventory lab/wheelhouse.lab.yaml"
+docker exec lab-web01-1 systemctl stop nginx                     # break something
+uv run wheelhouse $I watch                                       # terminal 1: the crew
+uv run wheelhouse $I console --as lab-operator --key lab/.secrets/approvers/lab-operator.key  # terminal 2
+```
+
+1. **Lookout** sees nginx is inactive on web01 and opens an incident.
+2. **Diver** investigates with read-only actions only (status, logs) and writes a diagnosis in which every claim quotes the evidence.
+3. **Assayer** checks every quote word for word against what the hosts returned. No verified root cause, no plan.
+4. **Navigator** proposes the fix as catalog steps (`sudo -n systemctl start nginx`), each with a check (`service_status` must show `active (running)`) and a rollback note.
+5. You open the console link, read the evidence and the exact command, and approve. The console signs with your Ed25519 key; it never runs anything.
+6. **Helmsman** (in the watch loop, which holds no key) runs the step, checks it, and closes the incident. Every decision and execution is in the ledger: `uv run wheelhouse $I ledger verify`.
+
+No lab? Replay a recorded drill to the real crew with your configured model:
+
+```bash
+uv run python lab/drill.py run nginx-stopped     # about $0.002 with Claude Haiku
+```
+
+### Single actions (lab)
+
+```bash
 uv run wheelhouse $I hosts                                         # reachable, POSIX shell checked
 uv run wheelhouse $I run db01 mysql_query database=app "sql=SELECT status, COUNT(*) FROM orders GROUP BY status"
 uv run wheelhouse $I request web01 service_restart service=nginx  # recorded, prints the step hash
-uv run wheelhouse approve <step hash> --by <your name>             # signed, single use, 30 minutes
+uv run wheelhouse $I approve <step hash> --by lab-operator --key lab/.secrets/approvers/lab-operator.key
 uv run wheelhouse $I run web01 service_restart service=nginx --approval approvals/<file>.json
-uv run wheelhouse $I ledger verify                                 # every decision and execution, hash-chained
 uv run wheelhouse $I mcp                                           # MCP server for Claude Code or Copilot (look only)
 ```
 
@@ -62,13 +84,32 @@ Copy your keys into a `.env` file in the folder you run Wheelhouse from (the rep
 ```
 ANTHROPIC_API_KEY=...
 OPENROUTER_API_KEY=...
-WHEELHOUSE_APPROVAL_KEY=...   # signs approvals; generate with: python -c "import secrets; print(secrets.token_hex(32))"
+# WHEELHOUSE_MODEL=claude-haiku-5-5        the crew's model (default); an OpenRouter or Ollama model id also works
+# WHEELHOUSE_LEDGER_KEY=...                optional, 32+ characters: pseudonymises names in the ledger
 # OLLAMA_BASE_URL=http://localhost:11434   optional, for a local model
 ```
 
-Keep the approval key away from any agent process: whoever can read it can sign approvals. Moving to public-key approvals is planned for Sprint 2 ([safety model](docs/safety-model.md)).
+Each approver creates their own key pair; the private key never leaves their machine:
 
-An inventory file (`wheelhouse.yaml`, or `--inventory PATH`) lists the hosts, their SSH details and the services Wheelhouse may name. See the lab's generated `lab/wheelhouse.lab.yaml` for the format.
+```bash
+uv run wheelhouse keys new dev        # writes ~/.wheelhouse/approvers/dev.key, prints the public key
+```
+
+An inventory file (`wheelhouse.yaml`, or `--inventory PATH`) lists the hosts, their SSH details, the services Wheelhouse may name, and the approvers' public keys:
+
+```yaml
+known_hosts: known_hosts
+approvers:
+  dev: ed25519:...            # from 'wheelhouse keys new dev'
+hosts:
+  web01: {address: 10.0.0.11, user: wheelhouse, identity_file: keys/wheelhouse, services: [nginx]}
+```
+
+The lab's generated `lab/wheelhouse.lab.yaml` is a complete example.
+
+## Contributing
+
+Install the pre-commit hooks once (`uv tool install pre-commit`, then `pre-commit install`). They run gitleaks and refuse committed virtualenvs; CI runs the same scan over the full history. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Project history
 

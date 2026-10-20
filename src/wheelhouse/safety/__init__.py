@@ -1,6 +1,6 @@
 """Lockkeeper and the safety layer. See docs/safety-model.md."""
 
-from wheelhouse.safety.approvals import Approval, ApprovalAuthority, step_hash
+from wheelhouse.safety.approvals import Approval, ApprovalAuthority, ApproverKey, step_hash
 from wheelhouse.safety.catalog import (
     ActionSpec,
     Catalog,
@@ -18,6 +18,7 @@ __all__ = [
     "ActionSpec",
     "Approval",
     "ApprovalAuthority",
+    "ApproverKey",
     "Catalog",
     "CatalogError",
     "Decision",

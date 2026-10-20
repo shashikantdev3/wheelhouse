@@ -1,6 +1,6 @@
 # Lab
 
-Five Ubuntu hosts running real systemd, reachable over SSH on your own machine. The crew meets the same `systemctl`, `journalctl`, MariaDB and RabbitMQ it will meet on client servers. Faults will be injected on purpose ("drills", Sprint 3) so every diagnosis can be scored against a known root cause.
+Five Ubuntu hosts running real systemd, reachable over SSH on your own machine. The crew meets the same `systemctl`, `journalctl`, MariaDB and RabbitMQ it will meet on client servers. Faults are injected on purpose ("drills") so every diagnosis can be checked against a known root cause; Sprint 3 turns them into a scored set.
 
 | Host | Port (127.0.0.1) | Runs |
 |---|---|---|
@@ -26,13 +26,26 @@ Then try:
 ```bash
 uv run wheelhouse --inventory lab/wheelhouse.lab.yaml run db01 mysql_query database=app "sql=SELECT status, COUNT(*) FROM orders GROUP BY status"
 uv run wheelhouse --inventory lab/wheelhouse.lab.yaml request web01 service_restart service=nginx
-uv run wheelhouse approve <step hash> --by <your name>
+uv run wheelhouse --inventory lab/wheelhouse.lab.yaml approve <step hash> --by lab-operator --key lab/.secrets/approvers/lab-operator.key
 uv run wheelhouse --inventory lab/wheelhouse.lab.yaml run web01 service_restart service=nginx --approval approvals/<file>.json
 uv run wheelhouse --inventory lab/wheelhouse.lab.yaml ledger verify
 WHEELHOUSE_LAB=1 uv run pytest tests/lab -v
 ```
 
 Stop it with `docker compose -f lab/docker-compose.yml down`.
+
+`setup_lab.py` also creates an approver, `lab-operator`, whose private key is `lab/.secrets/approvers/lab-operator.key` and whose public key is in the generated inventory.
+
+## Drills
+
+A drill injects a fault, records what every read-only action returns, and puts the fault right again:
+
+```bash
+uv run python lab/drill.py record nginx-stopped       # needs the lab
+uv run python lab/drill.py run nginx-stopped          # no lab needed: replays to the real crew
+```
+
+`run` uses your configured model (`.env`), approves with a throwaway drill key and prints the evidence, the claim check, the plan, the result and the cost. Recordings are committed in `lab/drills/` (lab output only). Available: `nginx-stopped`, `memcached-stopped`. If you record your own, start from fresh containers (`docker compose -f lab/docker-compose.yml up -d --force-recreate`): old stops in the journal change what the crew concludes.
 
 ## What the lab shows about real deployments
 

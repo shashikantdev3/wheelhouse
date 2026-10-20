@@ -13,6 +13,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from wheelhouse.safety.approvals import check_approver_name, parse_public_key
+
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9.\-]{0,62}")
 _ADDRESS = re.compile(r"[A-Za-z0-9][A-Za-z0-9.\-:]{0,252}")
 _USER = re.compile(r"[a-z_][a-z0-9_\-]{0,31}")
@@ -41,6 +43,8 @@ class Host(BaseModel):
     user: str
     identity_file: Path
     services: tuple[str, ...] = ()
+    databases: tuple[str, ...] = ()
+    """Databases Wheelhouse may query on this host. When listed, others are refused."""
     role: str = ""
 
     @field_validator("address")
@@ -79,6 +83,10 @@ class Inventory(BaseModel):
 
     known_hosts: Path
     ledger: Path = Path("ledger/ledger.jsonl")
+    state: Path = Path(".wheelhouse")
+    """Folder for incidents and approvals waiting to be used."""
+    approvers: dict[str, str] = {}
+    """Who may approve Touch steps: name -> 'ed25519:<public key>'."""
     sudo_users: frozenset[str] = frozenset({"root"})
     limits: Limits = Limits()
     hosts: dict[str, Host]
@@ -89,6 +97,14 @@ class Inventory(BaseModel):
         for name in v:
             if not _NAME.fullmatch(name):
                 raise ValueError(f"host name '{name}' is not allowed")
+        return v
+
+    @field_validator("approvers")
+    @classmethod
+    def _approvers(cls, v: dict[str, str]) -> dict[str, str]:
+        for name, key in v.items():
+            check_approver_name(name)
+            parse_public_key(key)
         return v
 
     def host(self, name: str) -> Host | None:
@@ -107,6 +123,7 @@ class Inventory(BaseModel):
             update={
                 "known_hosts": _rel(base, inv.known_hosts),
                 "ledger": _rel(base, inv.ledger),
+                "state": _rel(base, inv.state),
                 "hosts": {
                     n: h.model_copy(update={"identity_file": _rel(base, h.identity_file)})
                     for n, h in inv.hosts.items()

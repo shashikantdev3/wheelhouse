@@ -30,10 +30,42 @@ _UNKNOWN_BUCKET = "?unknown-host"
 class RunResult:
     decision: Decision
     result: CommandResult | None = None
+    decision_id: str | None = None
+    """Ledger id of the gate decision, so evidence can cite the record it came from."""
 
     @property
     def executed(self) -> bool:
         return self.result is not None
+
+
+def inventory_problem(inventory: Inventory, host: object, args: object) -> str | None:
+    """Inventory rules on top of the catalog: known host, listed services and databases."""
+    target = inventory.host(host) if isinstance(host, str) else None
+    if target is None:
+        return "host is not in the inventory"
+    if not isinstance(args, Mapping):
+        return None
+    service = args.get("service")
+    if service is not None and target.services and service not in target.services:
+        return "service is not listed for this host in the inventory"
+    database = args.get("database")
+    if database is not None and target.databases and database not in target.databases:
+        return "database is not listed for this host in the inventory"
+    return None
+
+
+def preview(
+    inventory: Inventory,
+    lockkeeper: Lockkeeper,
+    host: str,
+    action: str,
+    args: Mapping[str, object] | None = None,
+) -> Decision:
+    """The gate's verdict on a step without an approval. Records and uses up nothing."""
+    problem = inventory_problem(inventory, host, args)
+    if problem:
+        return Decision(Verdict.REFUSED, Tier.NEVER, problem, str(host), str(action))
+    return lockkeeper.decide(host, action, args, None)
 
 
 class Runner:
@@ -72,8 +104,15 @@ class Runner:
 
     def _refuse(self, host: str, action: str, reason: str) -> RunResult:
         decision = Decision(Verdict.REFUSED, Tier.NEVER, reason, host, action)
-        self._record(decision, None)
-        return RunResult(decision)
+        return RunResult(decision, decision_id=self._record(decision, None))
+
+    def _inventory_problem(self, host: object, args: object) -> str | None:
+        return inventory_problem(self.inventory, host, args)
+
+    def preview(self, host: str, action: str, args: Mapping[str, object] | None = None) -> Decision:
+        """What the gate would say about a step, without an approval. Records nothing and
+        uses up nothing; used to validate plans before a person is asked to approve."""
+        return preview(self.inventory, self.lockkeeper, host, action, args)
 
     def request(
         self,
@@ -83,6 +122,7 @@ class Runner:
         approval: Approval | None = None,
         execute: bool = True,
         now: datetime | None = None,
+        context: str = "",
     ) -> RunResult:
         """Gate a request, record the decision, and run it if allowed and execute=True.
         With execute=False a Touch step is never cleared, so no approval is used up."""
@@ -93,25 +133,20 @@ class Runner:
             return RunResult(
                 Decision(Verdict.REFUSED, Tier.NEVER, "rate limit reached", str(host), action)
             )
-        if target is None:
-            return self._refuse(str(host), str(action), "host is not in the inventory")
-
-        service = (args or {}).get("service") if isinstance(args, Mapping) else None
-        if service is not None and target.services and service not in target.services:
-            return self._refuse(
-                host, str(action), "service is not listed for this host in the inventory"
-            )
+        problem = self._inventory_problem(host, args)
+        if problem or target is None:
+            return self._refuse(str(host), str(action), problem or "host is not in the inventory")
 
         use_approval = approval if execute else None
         guard = self.ledger.locked() if use_approval is not None else nullcontext()
         with guard:
             if use_approval is not None:
                 self.lockkeeper.refresh_used_nonces(self.ledger.used_nonces())
-            decision = self.lockkeeper.decide(host, action, args, use_approval, now)
+            decision = self.lockkeeper.decide(host, action, args, use_approval, now, context)
             decision_id = self._record(decision, use_approval if decision.may_run else None)
 
         if not (execute and decision.may_run) or decision.rendered is None:
-            return RunResult(decision)
+            return RunResult(decision, decision_id=decision_id)
 
         result = self.transport.run(host, target, decision.rendered)
         self.ledger.append(
@@ -127,4 +162,4 @@ class Runner:
                 key=self.key,
             )
         )
-        return RunResult(decision, result)
+        return RunResult(decision, result, decision_id)

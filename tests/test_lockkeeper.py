@@ -13,20 +13,21 @@ from wheelhouse.safety import (
     Tier,
     Verdict,
 )
+from wheelhouse.safety.approvals import ApproverKey
+
+from tests.keys import OTHER, SHASHIKANT, authority
 
 NOW = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
-KEY = b"k" * 32
 
 
 def keeper() -> Lockkeeper:
-    return Lockkeeper(authority=ApprovalAuthority(KEY))
+    return Lockkeeper(authority=authority())
 
 
 def approve(k: Lockkeeper, host: str, action: str, args: dict[str, str], **kw: object) -> Approval:
     first = k.decide(host, action, args, now=NOW)
     assert first.step_hash is not None
-    assert k.authority is not None
-    return k.authority.grant(first.step_hash, "shashikant", now=NOW, **kw)  # type: ignore[arg-type]
+    return SHASHIKANT.grant(first.step_hash, now=NOW, **kw)  # type: ignore[arg-type]
 
 
 def test_look_runs_without_approval() -> None:
@@ -92,10 +93,15 @@ def test_forged_or_altered_approvals_are_rejected() -> None:
     forgeries = [
         Approval(good.step_hash, "anyone", NOW, NOW + timedelta(minutes=1), "n", ""),
         Approval(good.step_hash, "anyone", NOW, NOW + timedelta(minutes=1), "n", "00" * 32),
-        replace(good, approver="someone-else"),
+        replace(good, approver="other"),
+        replace(good, approver="not-listed"),
         replace(good, expires_at=good.expires_at + timedelta(hours=1)),
         replace(good, nonce="fresh-nonce"),
-        ApprovalAuthority(b"x" * 32).grant(good.step_hash, "shashikant", now=NOW),
+        replace(good, signature="!!not-base64!!"),
+        # Signed by a key that claims to be shashikant but is not the listed key.
+        ApproverKey.generate("shashikant").grant(good.step_hash, now=NOW),
+        # A listed approver's real signature, relabelled as someone else.
+        replace(OTHER.grant(good.step_hash, now=NOW), approver="shashikant"),
     ]
     for forged in forgeries:
         d = k.decide("web01", "service_restart", {"service": "nginx"}, forged, now=NOW)
@@ -116,17 +122,41 @@ def test_without_authority_touch_never_runs() -> None:
     assert d.verdict is Verdict.NEEDS_APPROVAL
 
 
-def test_authority_rules() -> None:
+def test_authority_and_signer_rules() -> None:
     with pytest.raises(ValueError):
-        ApprovalAuthority(b"short")
-    auth = ApprovalAuthority(KEY)
+        ApprovalAuthority({"Bad Name": SHASHIKANT.public_key})
     with pytest.raises(ValueError):
-        auth.grant("x", "  ", now=NOW)
+        ApprovalAuthority({"a": "ed25519:short"})
     with pytest.raises(ValueError):
-        auth.grant("x", "a", now=NOW, ttl=timedelta(hours=9))
+        ApprovalAuthority({"a": "rsa:abc"})
     with pytest.raises(ValueError):
-        auth.grant("x", "a", now=datetime(2026, 10, 19))
-    assert "key" not in repr(auth).replace("key=***", "")
+        ApproverKey.generate("  ")
+    step = "a" * 64
+    with pytest.raises(ValueError):
+        SHASHIKANT.grant("x", now=NOW)
+    with pytest.raises(ValueError):
+        SHASHIKANT.grant(step, now=NOW, ttl=timedelta(hours=9))
+    with pytest.raises(ValueError):
+        SHASHIKANT.grant(step, now=datetime(2026, 10, 19))
+    assert repr(SHASHIKANT) == "ApproverKey(name='shashikant', key=***)"
+    assert authority().approvers == ["other", "shashikant"]
+
+
+def test_key_file_round_trip_and_permissions(tmp_path: object) -> None:
+    import os
+    from pathlib import Path
+
+    p = Path(str(tmp_path)) / "dev.key"
+    signer = ApproverKey.generate("dev")
+    signer.save(p)
+    with pytest.raises(FileExistsError):
+        signer.save(p)
+    loaded = ApproverKey.load("dev", p)
+    assert loaded.public_text == signer.public_text
+    if os.name == "posix":
+        os.chmod(p, 0o644)
+        with pytest.raises(ValueError, match="chmod 600"):
+            ApproverKey.load("dev", p)
 
 
 def test_unknown_action_refused() -> None:
@@ -159,7 +189,7 @@ def test_guard_refuses_even_with_a_valid_approval() -> None:
             )
         ]
     )
-    k = Lockkeeper(bad, ApprovalAuthority(KEY))
+    k = Lockkeeper(bad, authority())
     d = k.decide("mq01", "wipe", {"q": "orders"}, now=NOW)
     assert d.verdict is Verdict.REFUSED
 
@@ -234,6 +264,18 @@ def test_malformed_approvals_do_not_crash(field_values: dict[str, object]) -> No
     assert d.verdict is Verdict.NEEDS_APPROVAL
 
 
-def test_grant_rejects_non_text_approver() -> None:
+def test_signer_rejects_non_text_name() -> None:
     with pytest.raises(ValueError):
-        ApprovalAuthority(KEY).grant("h", None, now=NOW)  # type: ignore[arg-type]
+        ApproverKey.generate(None)  # type: ignore[arg-type]
+
+
+def test_signatures_are_strict_and_allow_small_clock_skew() -> None:
+    k = keeper()
+    good = approve(k, "web01", "service_restart", {"service": "nginx"})
+    junk = replace(good, signature=good.signature[:10] + "!*" + good.signature[10:])
+    d = k.decide("web01", "service_restart", {"service": "nginx"}, junk, now=NOW)
+    assert d.verdict is Verdict.NEEDS_APPROVAL and "signature" in d.reason
+    ahead = approve(k, "web01", "service_restart", {"service": "nginx"})
+    ahead_at = SHASHIKANT.grant(ahead.step_hash, now=NOW + timedelta(seconds=30))
+    ran = k.decide("web01", "service_restart", {"service": "nginx"}, ahead_at, now=NOW)
+    assert ran.may_run

@@ -9,3 +9,4 @@
 | [0005](0005-licence.md) | Licence: Business Source License 1.1 | Accepted |
 | [0006](0006-safety-review-sprint-0.md) | Safety review of Sprint 0 | Accepted |
 | [0007](0007-sprint-1-runtime-and-review.md) | Sprint 1: runtime, ledger, lab, and their review | Accepted |
+| [0008](0008-sprint-2-reactive-crew.md) | Sprint 2: reactive crew, Ed25519 approvals, approval console | Accepted |

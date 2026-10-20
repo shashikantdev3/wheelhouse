@@ -3,9 +3,10 @@ from pathlib import Path
 
 from wheelhouse.ledger import Ledger
 from wheelhouse.runtime import CommandResult, Host, Inventory, Limits, Runner
-from wheelhouse.safety import ApprovalAuthority, RenderedAction, Verdict
+from wheelhouse.safety import RenderedAction, Verdict
 
-KEY = b"k" * 32
+from tests.keys import LEDGER_KEY as KEY
+from tests.keys import SHASHIKANT, authority
 
 
 class FakeTransport:
@@ -28,7 +29,7 @@ def make(tmp_path: Path, per_minute: int = 30) -> tuple[Runner, FakeTransport, L
     )
     fake = FakeTransport()
     ledger = Ledger(inv.ledger)
-    runner = Runner(inv, fake, ledger, authority=ApprovalAuthority(KEY), key=KEY)
+    runner = Runner(inv, fake, ledger, authority=authority(), key=KEY)
     return runner, fake, ledger
 
 
@@ -53,16 +54,14 @@ def test_touch_flow_request_approve_run_and_no_reuse(tmp_path: Path) -> None:
     req = runner.request("web01", "service_restart", {"service": "nginx"}, execute=False)
     assert req.decision.verdict is Verdict.NEEDS_APPROVAL and not fake.calls
     assert req.decision.step_hash
-    approval = ApprovalAuthority(KEY).grant(
-        req.decision.step_hash, "shashikant", ttl=timedelta(minutes=5)
-    )
+    approval = SHASHIKANT.grant(req.decision.step_hash, ttl=timedelta(minutes=5))
     ran = runner.request("web01", "service_restart", {"service": "nginx"}, approval)
     assert ran.executed
     assert fake.calls == [("web01", ("sudo", "-n", "systemctl", "restart", "nginx"))]
     again = runner.request("web01", "service_restart", {"service": "nginx"}, approval)
     assert not again.executed
     # A new runner (a restart) reads used approvals back from the ledger.
-    runner2 = Runner(runner.inventory, fake, ledger, authority=ApprovalAuthority(KEY), key=KEY)
+    runner2 = Runner(runner.inventory, fake, ledger, authority=authority(), key=KEY)
     assert not runner2.request("web01", "service_restart", {"service": "nginx"}, approval).executed
     assert ledger.verify().ok
 
@@ -71,7 +70,7 @@ def test_request_does_not_use_up_an_approval(tmp_path: Path) -> None:
     runner, fake, _ = make(tmp_path)
     req = runner.request("web01", "service_stop", {"service": "nginx"}, execute=False)
     assert req.decision.step_hash
-    approval = ApprovalAuthority(KEY).grant(req.decision.step_hash, "a")
+    approval = SHASHIKANT.grant(req.decision.step_hash)
     runner.request("web01", "service_stop", {"service": "nginx"}, approval, execute=False)
     assert runner.request("web01", "service_stop", {"service": "nginx"}, approval).executed
 
@@ -95,10 +94,10 @@ def test_hostile_host_name_still_records_a_valid_record(tmp_path: Path) -> None:
 
 def test_two_processes_cannot_spend_one_approval(tmp_path: Path) -> None:
     runner_a, fake, ledger = make(tmp_path)
-    runner_b = Runner(runner_a.inventory, fake, ledger, authority=ApprovalAuthority(KEY), key=KEY)
+    runner_b = Runner(runner_a.inventory, fake, ledger, authority=authority(), key=KEY)
     req = runner_a.request("web01", "service_restart", {"service": "nginx"}, execute=False)
     assert req.decision.step_hash
-    approval = ApprovalAuthority(KEY).grant(req.decision.step_hash, "a")
+    approval = SHASHIKANT.grant(req.decision.step_hash)
     first = runner_a.request("web01", "service_restart", {"service": "nginx"}, approval)
     second = runner_b.request("web01", "service_restart", {"service": "nginx"}, approval)
     assert first.executed and not second.executed

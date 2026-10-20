@@ -13,7 +13,7 @@ import pytest
 
 from wheelhouse.ledger import Ledger
 from wheelhouse.runtime import Inventory, Runner, SSHTransport
-from wheelhouse.safety import ApprovalAuthority, Verdict
+from wheelhouse.safety import ApprovalAuthority, ApproverKey, Verdict
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("WHEELHOUSE_LAB") != "1", reason="set WHEELHOUSE_LAB=1 with the lab running"
@@ -21,6 +21,7 @@ pytestmark = pytest.mark.skipif(
 
 ROOT = Path(__file__).resolve().parents[2]
 KEY = b"lab-test-key-" + b"x" * 32
+OPERATOR = ROOT / "lab" / ".secrets" / "approvers" / "lab-operator.key"
 
 
 @pytest.fixture
@@ -31,7 +32,7 @@ def runner(tmp_path: Path) -> Runner:
         inv,
         SSHTransport(str(inv.known_hosts), inv.limits),
         Ledger(inv.ledger),
-        authority=ApprovalAuthority(KEY),
+        authority=ApprovalAuthority(inv.approvers),
         key=KEY,
         principal="lab-test",
     )
@@ -88,7 +89,7 @@ def test_touch_needs_approval_runs_once_and_is_recorded(runner: Runner) -> None:
     args = {"service": "memcached"}
     asked = runner.request("app01", "service_restart", args, execute=False)
     assert asked.decision.verdict is Verdict.NEEDS_APPROVAL and asked.decision.step_hash
-    approval = ApprovalAuthority(KEY).grant(asked.decision.step_hash, "lab-tester")
+    approval = ApproverKey.load("lab-operator", OPERATOR).grant(asked.decision.step_hash)
     ran = runner.request("app01", "service_restart", args, approval)
     assert ran.result is not None and ran.result.status == "ok"
     again = runner.request("app01", "service_restart", args, approval)

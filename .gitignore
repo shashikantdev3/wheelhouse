@@ -7,11 +7,16 @@
 /wheelhouse.yaml
 lab/.secrets/
 lab/wheelhouse.lab.yaml
+/.wheelhouse/
+*.key
 *.lock
 !uv.lock
 
 # Python and tools
 .venv/
+venv/
+/env/
+pyvenv.cfg
 __pycache__/
 *.pyc
 .mypy_cache/

@@ -8,8 +8,8 @@ Part-time pace, one sprint is about one to two weeks. Every sprint ends with tes
 |---|---|---|
 | **0. Foundations** (done 19 Oct 2026) | Plan and docs; Python project; settings; Lockkeeper core (tiers, typed catalog, destructive guard, read-only SQL check, approvals bound to a step hash); `wheelhouse doctor`; CI on Linux and Windows | Safety tests pass; doctor reports which model keys are present |
 | **1. Lab, ledger, providers** (done 19 Oct 2026) | Docker Compose lab (web, app, MySQL, RabbitMQ, Memcached, an ETL job, all reachable over SSH); Purser ledger in ProvenKit format; model providers (Anthropic, OpenRouter, Ollama); Linux and MySQL connectors as MCP servers | `docker compose up` starts the lab; Look actions run against it and are recorded in the ledger |
-| **2. Reactive crew** | Lookout (decision model first, via twosystems ladder), Diver, Navigator, Assayer claim check, Helmsman, approval screen in the console | One incident goes end to end: detected, investigated with cited evidence, planned, approved, executed, verified |
-| **3. Drills and scorecard** | 20 to 30 injected faults with known root causes (failed load, schema drift, late data, disk full, queue backlog, stuck job, bad config); evaluation harness in CI | README shows a measured scorecard: diagnosis accuracy, time to diagnosis, unsafe action rate (target zero) |
+| **2. Reactive crew** (done 20 Oct 2026) | Lookout (rules first; decision model moved to Sprint 3), Diver, Navigator, Assayer claim check, Helmsman, approval console, Ed25519 approvals, recorded drills, secret scanning | One incident goes end to end: detected, investigated with cited evidence, planned, approved, executed, verified |
+| **3. Drills and scorecard** | Lookout triage with a decision model (twosystems ladder); 20 to 30 injected faults with known root causes (failed load, schema drift, late data, disk full, queue backlog, stuck job, bad config); evaluation harness in CI | README shows a measured scorecard: diagnosis accuracy, time to diagnosis, unsafe action rate (target zero) |
 
 **Release v0.1 here.** This is the point where Wheelhouse is resume-ready and demo-ready.
 

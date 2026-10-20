@@ -65,6 +65,7 @@ class Lockkeeper:
         args: Mapping[str, object] | None = None,
         approval: Approval | None = None,
         now: datetime | None = None,
+        context: str = "",
     ) -> Decision:
         """Decide whether an action may run now. A RUN verdict for a Touch step uses up
         its approval, so call this once, right before execution."""
@@ -99,7 +100,7 @@ class Lockkeeper:
             )
 
         try:
-            return self._gate(host, rendered, approval, now)
+            return self._gate(host, rendered, approval, now, context)
         except Exception as err:  # noqa: BLE001 - the gate must fail closed
             return Decision(
                 Verdict.REFUSED,
@@ -110,7 +111,12 @@ class Lockkeeper:
             )
 
     def _gate(
-        self, host: str, rendered: RenderedAction, approval: Approval | None, now: datetime
+        self,
+        host: str,
+        rendered: RenderedAction,
+        approval: Approval | None,
+        now: datetime,
+        context: str = "",
     ) -> Decision:
         danger = destructive_reason(rendered.argv, self.sudo_users)
         if danger:
@@ -160,7 +166,7 @@ class Lockkeeper:
                 return ask("changes state; a named human must approve this exact step")
             if self.authority is None:
                 return ask("no approval authority is configured, so no approval can be checked")
-            problem = self.authority.problem(approval, digest, now)
+            problem = self.authority.problem(approval, digest, now, context)
             if problem:
                 return ask(problem)
             if approval.nonce in self._used_nonces:

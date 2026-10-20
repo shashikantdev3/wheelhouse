@@ -10,6 +10,7 @@ Until a signing process is set up, pull requests from outside contributors are k
 
 ## Before opening a pull request
 
+- Install the hooks once: `uv tool install pre-commit`, then `pre-commit install`. They run gitleaks on every commit and refuse committed virtualenvs. Never commit a secret; if one slips in, rotate it first.
 - `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest`
 - New actions need a catalog entry, guard rules and tests. See [docs/safety-model.md](docs/safety-model.md).
 - Do not add anything that lets an agent delete, purge, drop, truncate or format.

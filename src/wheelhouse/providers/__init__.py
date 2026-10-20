@@ -6,6 +6,7 @@ from wheelhouse.providers.clients import (
     AnthropicProvider,
     OllamaProvider,
     OpenRouterProvider,
+    choose_provider,
     live_check,
 )
 from wheelhouse.providers.pricing import PRICES, cost_usd
@@ -19,6 +20,7 @@ __all__ = [
     "Provider",
     "ProviderError",
     "Usage",
+    "choose_provider",
     "cost_usd",
     "live_check",
 ]

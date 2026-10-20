@@ -6,8 +6,12 @@ wheelhouse check HOST ACTION k=v      Lockkeeper's verdict, dry run, nothing rec
 wheelhouse hosts                      inventory and reachability
 wheelhouse run HOST ACTION k=v [--approval FILE]
 wheelhouse request HOST ACTION k=v    record a change request, print its step hash
-wheelhouse approve STEP_HASH --by NAME [--minutes N] [--out FILE]
+wheelhouse approve STEP_HASH --by NAME [--key FILE] [--minutes N] [--out FILE]
+wheelhouse keys new NAME [--out FILE]  create an approver key pair
 wheelhouse ledger verify | tail [-n N]
+wheelhouse watch [--once] [--interval S]  Lookout, Diver, Assayer, Navigator, Helmsman
+wheelhouse incidents [ID]             list incidents, or show one
+wheelhouse console --as NAME [--key FILE] [--port N]   approve or reject plans
 """
 
 from __future__ import annotations
@@ -23,18 +27,22 @@ from pathlib import Path
 
 from wheelhouse import __version__
 from wheelhouse.config import Settings
-from wheelhouse.safety import ApprovalAuthority, Lockkeeper, Verdict
+from wheelhouse.safety import ApprovalAuthority, ApproverKey, Lockkeeper, Verdict
 from wheelhouse.safety.approval_io import dump_approval, load_approval
 
 DEFAULT_INVENTORY = "wheelhouse.yaml"
 
 
-def _key(settings: Settings) -> bytes | None:
-    key = settings.wheelhouse_approval_key
+def _ledger_key(settings: Settings) -> bytes | None:
+    key = settings.wheelhouse_ledger_key
     if key is None:
         return None
     raw = key.get_secret_value().encode()
     return raw if len(raw) >= 32 else None
+
+
+def _default_key_path(name: str) -> Path:
+    return Path.home() / ".wheelhouse" / "approvers" / f"{name}.key"
 
 
 def _pairs(pairs: Sequence[str]) -> dict[str, object] | None:
@@ -56,8 +64,12 @@ def _doctor(live: bool) -> int:
     for name, ok in settings.providers().items():
         print(f"  {name:<11} {'configured' if ok else 'not configured'}")
     print(
-        "approval key: "
-        + ("configured" if _key(settings) else "not configured (Touch actions cannot run)")
+        "ledger key: "
+        + (
+            "configured"
+            if _ledger_key(settings)
+            else "not configured (ledger pseudonyms use plain SHA-256)"
+        )
     )
     print(f"action catalog: {len(keeper.catalog)} actions, policy {keeper.catalog.policy_hash()}")
     if live:
@@ -107,13 +119,12 @@ def _runner(inventory_path: str) -> object:
 
     settings = Settings()
     inv = Inventory.load(inventory_path)
-    key = _key(settings)
     return Runner(
         inv,
         SSHTransport(str(inv.known_hosts), inv.limits),
         Ledger(inv.ledger),
-        authority=ApprovalAuthority(key) if key else None,
-        key=key,
+        authority=ApprovalAuthority(inv.approvers) if inv.approvers else None,
+        key=_ledger_key(settings),
     )
 
 
@@ -145,21 +156,33 @@ def _run(ns: argparse.Namespace, execute: bool) -> int:
     return 0
 
 
-def _approve(step: str, by: str, minutes: int, out: str | None) -> int:
+def _approve(ns: argparse.Namespace) -> int:
     from datetime import timedelta
 
-    key = _key(Settings())
-    if key is None:
-        print("WHEELHOUSE_APPROVAL_KEY (32+ characters) is not set in .env", file=sys.stderr)
-        return 2
-    if not re.fullmatch(r"[0-9a-f]{64}", step):
+    from wheelhouse.runtime import Inventory
+
+    if not re.fullmatch(r"[0-9a-f]{64}", ns.step_hash):
         print("step hash must be 64 lowercase hex characters", file=sys.stderr)
         return 2
-    approval = ApprovalAuthority(key).grant(step, by, ttl=timedelta(minutes=minutes))
-    path = Path(out or f"approvals/{step[:16]}.json")
+    key_path = Path(ns.key) if ns.key else _default_key_path(ns.by)
+    try:
+        signer = ApproverKey.load(ns.by, key_path)
+    except (OSError, ValueError) as err:
+        print(f"cannot use approver key {key_path}: {err}", file=sys.stderr)
+        return 2
+    if Path(ns.inventory).exists():
+        listed = Inventory.load(ns.inventory).approvers.get(ns.by)
+        if listed != signer.public_text:
+            print(
+                f"approver '{ns.by}' with this key is not listed in {ns.inventory}; "
+                "the runner would refuse the approval",
+                file=sys.stderr,
+            )
+            return 2
+    approval = signer.grant(ns.step_hash, ttl=timedelta(minutes=ns.minutes))
+    path = Path(ns.out or f"approvals/{ns.step_hash[:16]}.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        # New file only, readable by the owner only: an approval is a bearer token.
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
         print(f"{path} already exists; choose another --out", file=sys.stderr)
@@ -168,6 +191,22 @@ def _approve(step: str, by: str, minutes: int, out: str | None) -> int:
         fh.write(dump_approval(approval))
     print(f"approved by {approval.approver} until {approval.expires_at.isoformat()}")
     print(f"approval file: {path} (single use)")
+    return 0
+
+
+def _keys_new(name: str, out: str | None) -> int:
+    try:
+        signer = ApproverKey.generate(name)
+        path = signer.save(Path(out) if out else _default_key_path(name))
+    except FileExistsError:
+        print("that key file already exists; choose another --out", file=sys.stderr)
+        return 2
+    except ValueError as err:
+        print(str(err), file=sys.stderr)
+        return 2
+    print(f"private key: {path} (keep it; readable by you only)")
+    print("add this to the inventory under 'approvers:'")
+    print(f"  {name}: {signer.public_text}")
     return 0
 
 
@@ -233,6 +272,99 @@ def _ledger(inventory_path: str, what: str, n: int) -> int:
     return 0
 
 
+def _store(inventory_path: str) -> object:
+    from wheelhouse.crew import IncidentStore
+    from wheelhouse.runtime import Inventory
+
+    return IncidentStore(Inventory.load(inventory_path).state)
+
+
+def _watch(ns: argparse.Namespace) -> int:
+    import time
+
+    from wheelhouse.crew import Crew, IncidentStore, Model
+    from wheelhouse.providers import choose_provider
+    from wheelhouse.runtime import Runner
+
+    runner = _runner(ns.inventory)
+    assert isinstance(runner, Runner)
+    store = IncidentStore(runner.inventory.state)
+    provider = choose_provider(Settings())
+    if provider is None:
+        print("no model configured: incidents will be detected but not investigated")
+    # The watch loop runs approved changes; it never holds an approver's key.
+    crew = Crew(runner, store, Model(provider) if provider else None)
+    while True:
+        try:
+            report = crew.run_once()
+        except Exception as err:  # noqa: BLE001 - report and keep watching
+            print(f"pass failed ({type(err).__name__}: {err}); retrying next pass")
+            if ns.once:
+                return 1
+            time.sleep(ns.interval)
+            continue
+        sw = report.sweep
+        print(
+            f"sweep: {len(sw.opened)} new, {len(sw.still_open)} still open, "
+            f"{len(sw.recovered)} recovered, {len(sw.unreachable)} unreachable"
+        )
+        for iid, status in {**report.investigated, **report.executed}.items():
+            print(f"  {iid}: {status}")
+        for name in store.unreadable:
+            print(f"  warning: incident file {name} could not be read; it was skipped")
+        if ns.once:
+            return 0
+        time.sleep(ns.interval)
+
+
+def _incidents(ns: argparse.Namespace) -> int:
+    from wheelhouse.crew import IncidentStore
+
+    store = _store(ns.inventory)
+    assert isinstance(store, IncidentStore)
+    if ns.id is None:
+        for i in store.all():
+            print(f"{i.id}  {i.status.value:<18} {i.host:<8} {i.title}")
+        return 0
+    try:
+        print(store.get(ns.id).model_dump_json(indent=2))
+    except KeyError:
+        print("no such incident", file=sys.stderr)
+        return 2
+    return 0
+
+
+def _console(ns: argparse.Namespace) -> int:
+    from wheelhouse.console import Console
+    from wheelhouse.crew import IncidentStore
+    from wheelhouse.runtime import Inventory
+
+    inv = Inventory.load(ns.inventory)
+    key_path = Path(ns.key) if ns.key else _default_key_path(ns.approver)
+    try:
+        signer = ApproverKey.load(ns.approver, key_path)
+    except (OSError, ValueError) as err:
+        print(f"cannot use approver key {key_path}: {err}", file=sys.stderr)
+        return 2
+    if inv.approvers.get(ns.approver) != signer.public_text:
+        print(
+            f"approver '{ns.approver}' with this key is not listed in {ns.inventory}",
+            file=sys.stderr,
+        )
+        return 2
+    console = Console(IncidentStore(inv.state), signer, inv, port=ns.port)
+    server = console.server()
+    print(f"approval console for {signer.name} (it signs approvals; it never runs changes)")
+    print(f"open once: http://127.0.0.1:{console.port}/login?token={console.login_token}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="wheelhouse")
     parser.add_argument("--version", action="version", version=f"wheelhouse {__version__}")
@@ -254,11 +386,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             p.add_argument("--approval", help="approval file from 'wheelhouse approve'")
     approve = sub.add_parser("approve", help="approve one exact step (signed, single use)")
     approve.add_argument("step_hash")
-    approve.add_argument("--by", required=True, help="your name, as the approver")
+    approve.add_argument("--by", required=True, help="your approver name in the inventory")
+    approve.add_argument("--key", help="your private key (default ~/.wheelhouse/approvers/)")
     approve.add_argument("--minutes", type=int, default=30)
     approve.add_argument("--out")
+    keys = sub.add_parser("keys", help="create an approver key pair")
+    keys.add_argument("what", choices=["new"])
+    keys.add_argument("name")
+    keys.add_argument("--out")
     sub.add_parser("hosts", help="list inventory hosts and check they are reachable")
     sub.add_parser("mcp", help="serve the inventory to MCP clients over stdio (look only)")
+    watch = sub.add_parser("watch", help="run the crew: detect, investigate, plan, execute")
+    watch.add_argument("--once", action="store_true", help="one pass, then exit")
+    watch.add_argument("--interval", type=int, default=60, help="seconds between passes")
+    incidents = sub.add_parser("incidents", help="list incidents, or show one as JSON")
+    incidents.add_argument("id", nargs="?")
+    console = sub.add_parser("console", help="local web page to approve or reject plans")
+    console.add_argument("--as", dest="approver", required=True, help="your approver name")
+    console.add_argument("--key", help="your private key (default ~/.wheelhouse/approvers/)")
+    console.add_argument("--port", type=int, default=8765)
     ledger = sub.add_parser("ledger", help="verify or show the ledger")
     ledger.add_argument("what", choices=["verify", "tail"])
     ledger.add_argument("-n", type=int, default=20)
@@ -275,11 +421,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     if ns.command == "request":
         return _run(ns, execute=False)
     if ns.command == "approve":
-        return _approve(ns.step_hash, ns.by, ns.minutes, ns.out)
+        return _approve(ns)
+    if ns.command == "keys":
+        return _keys_new(ns.name, ns.out)
     if ns.command == "hosts":
         return _hosts(ns.inventory)
     if ns.command == "mcp":
         return _mcp(ns.inventory)
+    if ns.command == "watch":
+        return _watch(ns)
+    if ns.command == "incidents":
+        return _incidents(ns)
+    if ns.command == "console":
+        return _console(ns)
     return _ledger(ns.inventory, ns.what, ns.n)
 
 
