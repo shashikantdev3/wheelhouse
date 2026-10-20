@@ -15,7 +15,7 @@ Five Ubuntu hosts running real systemd, reachable over SSH on your own machine. 
 Needs Docker (Docker Desktop on Windows or macOS), OpenSSH and uv. From the repository root:
 
 ```bash
-python lab/setup_lab.py                                  # keys, pinned host keys, sudo rules, inventory
+uv run python lab/setup_lab.py                           # keys, pinned host keys, sudo rules, inventory
 docker compose -f lab/docker-compose.yml --profile build build base
 docker compose -f lab/docker-compose.yml up -d --build
 uv run wheelhouse --inventory lab/wheelhouse.lab.yaml hosts

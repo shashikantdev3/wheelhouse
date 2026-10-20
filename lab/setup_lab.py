@@ -1,7 +1,7 @@
 """Prepare the local lab: keys, pinned host keys, sudo rules and the inventory.
 
 Run once from the repository root:
-    python lab/setup_lab.py
+    uv run python lab/setup_lab.py
     docker compose -f lab/docker-compose.yml --profile build build base
     docker compose -f lab/docker-compose.yml up -d --build
     uv run wheelhouse --inventory lab/wheelhouse.lab.yaml hosts

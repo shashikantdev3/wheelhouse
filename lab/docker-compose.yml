@@ -1,5 +1,5 @@
 # Wheelhouse lab: five hosts running real systemd, reachable over SSH on localhost.
-# Run `python lab/setup_lab.py` once first; it creates keys and the inventory.
+# Run `uv run python lab/setup_lab.py` once first; it creates keys and the inventory.
 # Linux, macOS and Windows (Docker Desktop) are supported; systemd needs privileged mode.
 
 x-host: &host

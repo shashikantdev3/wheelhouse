@@ -1,6 +1,6 @@
 """End-to-end tests against the Docker lab. Skipped unless WHEELHOUSE_LAB=1.
 
-python lab/setup_lab.py
+uv run python lab/setup_lab.py
 docker compose -f lab/docker-compose.yml --profile build build base
 docker compose -f lab/docker-compose.yml up -d --build
 WHEELHOUSE_LAB=1 uv run pytest tests/lab -v
