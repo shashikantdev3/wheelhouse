@@ -54,7 +54,7 @@ jobs:
         with:
           python-version: "3.13"
       - run: uv sync --locked --all-extras
-      - run: uv run python 
+      - run: uv run python lab/setup_lab.py
       - run: docker compose -f lab/docker-compose.yml --profile build build base
       - run: docker compose -f lab/docker-compose.yml up -d --build
       - run: sleep 30 && uv run wheelhouse --inventory lab/wheelhouse.lab.yaml hosts
