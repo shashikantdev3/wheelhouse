@@ -1,0 +1,15 @@
+# Local checks before every commit. Install once:
+#   uv tool install pre-commit   (or: pip install pre-commit)
+#   pre-commit install
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+  - repo: local
+    hooks:
+      - id: no-virtualenv
+        name: refuse committed virtualenvs
+        entry: virtualenv folders (pyvenv.cfg) must not be committed
+        language: fail
+        files: (^|/)pyvenv\.cfg$

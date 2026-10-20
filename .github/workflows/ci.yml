@@ -27,12 +27,26 @@ jobs:
       - run: uv run mypy
       - run: uv run pytest -q
 
+  secrets:
+    # Scans the full history for secrets, and refuses committed virtualenvs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: gitleaks (full history)
+        run: >
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1
+          git /repo --redact --no-banner --config /repo/.gitleaks.toml
+      - name: no committed virtualenvs
+        run: |
+          if git ls-files | grep -E '(^|/)pyvenv\.cfg$'; then
+            echo "a virtualenv is committed"; exit 1
+          fi
+
   lab:
     # Builds the five-host Docker lab and runs the end-to-end tests over real SSH.
-    # Marked continue-on-error until it has passed on GitHub's runners at least once
-    # (systemd-in-Docker depends on the runner's cgroup setup).
     runs-on: ubuntu-latest
-    continue-on-error: true
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
